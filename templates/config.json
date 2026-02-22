@@ -16,5 +16,8 @@
 
   "pm_tool": null,
 
+  "auto_invoke_skills": true,
+  "disabled_skills": [],
+
   "team": []
 }

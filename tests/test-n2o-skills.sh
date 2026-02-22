@@ -244,6 +244,156 @@ test_lint_skills_still_passes() {
 }
 
 # =============================================================================
+# Task 2: CLAUDE.md template & config tests
+# =============================================================================
+
+TEST_DIR=""
+
+setup() {
+  TEST_DIR=$(mktemp -d)
+}
+
+teardown() {
+  if [[ -n "$TEST_DIR" && -d "$TEST_DIR" ]]; then
+    rm -rf "$TEST_DIR"
+  fi
+  TEST_DIR=""
+}
+
+# Wrap run_test with setup/teardown for Task 2 tests that need temp dirs
+run_test_with_setup() {
+  local name="$1"
+  local func="$2"
+  CURRENT_TEST="$name"
+  ((TOTAL++)) || true
+
+  setup
+  local err_file
+  err_file=$(mktemp)
+
+  if $func 2>"$err_file"; then
+    echo -e "  ${GREEN}PASS${NC}  $name"
+    ((PASS++)) || true
+  else
+    echo -e "  ${RED}FAIL${NC}  $name"
+    local err_output
+    err_output=$(cat "$err_file")
+    if [[ -n "$err_output" ]]; then
+      echo "$err_output" | while IFS= read -r line; do
+        echo -e "        $line"
+      done
+    fi
+    ((FAIL++)) || true
+    FAILED_TESTS+=("$name")
+  fi
+
+  rm -f "$err_file"
+  teardown
+}
+
+test_config_template_has_auto_invoke_skills() {
+  # templates/config.json should have auto_invoke_skills field
+  local val
+  val=$(jq -r '.auto_invoke_skills' "$N2O_DIR/templates/config.json" 2>/dev/null)
+  if [[ "$val" != "true" ]]; then
+    echo "    ASSERT FAILED: templates/config.json missing auto_invoke_skills: true (got: $val)" >&2
+    return 1
+  fi
+}
+
+test_config_template_has_disabled_skills() {
+  # templates/config.json should have disabled_skills field (empty array)
+  local val
+  val=$(jq -r '.disabled_skills | length' "$N2O_DIR/templates/config.json" 2>/dev/null)
+  if [[ "$val" != "0" ]]; then
+    echo "    ASSERT FAILED: templates/config.json disabled_skills should be empty array (length: $val)" >&2
+    return 1
+  fi
+  # Verify it's actually an array
+  local type
+  type=$(jq -r '.disabled_skills | type' "$N2O_DIR/templates/config.json" 2>/dev/null)
+  if [[ "$type" != "array" ]]; then
+    echo "    ASSERT FAILED: templates/config.json disabled_skills should be an array (type: $type)" >&2
+    return 1
+  fi
+}
+
+test_claude_template_has_auto_invocation_instruction() {
+  # templates/CLAUDE.md should have an agent instruction about auto-invocation
+  if ! grep -q 'auto.invoc' "$N2O_DIR/templates/CLAUDE.md" 2>/dev/null && ! grep -q 'auto_invoke' "$N2O_DIR/templates/CLAUDE.md" 2>/dev/null; then
+    echo "    ASSERT FAILED: templates/CLAUDE.md missing auto-invocation agent instruction" >&2
+    return 1
+  fi
+}
+
+test_claude_template_mentions_pattern_skills_ambient() {
+  # templates/CLAUDE.md should describe pattern skills as ambient/passive
+  local content
+  content=$(cat "$N2O_DIR/templates/CLAUDE.md")
+  local content_lower
+  content_lower=$(echo "$content" | tr '[:upper:]' '[:lower:]')
+  if [[ "$content_lower" != *"ambient"* ]] && [[ "$content_lower" != *"passive"* ]] && [[ "$content_lower" != *"automatically consult"* ]]; then
+    echo "    ASSERT FAILED: templates/CLAUDE.md should describe pattern skills as ambient/passive" >&2
+    return 1
+  fi
+}
+
+test_claude_template_references_config() {
+  # templates/CLAUDE.md should reference .pm/config.json for auto-invocation control
+  if ! grep -q 'config.json' "$N2O_DIR/templates/CLAUDE.md" 2>/dev/null; then
+    echo "    ASSERT FAILED: templates/CLAUDE.md should reference config.json for auto-invocation control" >&2
+    return 1
+  fi
+}
+
+test_claude_template_keeps_detect_project_instruction() {
+  # The existing detect-project UNFILLED instruction should still be there
+  if ! grep -q 'UNFILLED' "$N2O_DIR/templates/CLAUDE.md" 2>/dev/null; then
+    echo "    ASSERT FAILED: templates/CLAUDE.md should still have UNFILLED markers for detect-project" >&2
+    return 1
+  fi
+}
+
+test_init_scaffolds_auto_invoke_config() {
+  # n2o init should create config.json with auto_invoke_skills field
+  "$N2O_DIR/n2o" init "$TEST_DIR" </dev/null >/dev/null 2>&1 || true
+
+  if [[ ! -f "$TEST_DIR/.pm/config.json" ]]; then
+    echo "    ASSERT FAILED: n2o init did not create .pm/config.json" >&2
+    return 1
+  fi
+
+  local val
+  val=$(jq -r '.auto_invoke_skills' "$TEST_DIR/.pm/config.json" 2>/dev/null)
+  if [[ "$val" != "true" ]]; then
+    echo "    ASSERT FAILED: scaffolded config.json missing auto_invoke_skills: true (got: $val)" >&2
+    return 1
+  fi
+
+  local disabled
+  disabled=$(jq -r '.disabled_skills | type' "$TEST_DIR/.pm/config.json" 2>/dev/null)
+  if [[ "$disabled" != "array" ]]; then
+    echo "    ASSERT FAILED: scaffolded config.json missing disabled_skills array (got: $disabled)" >&2
+    return 1
+  fi
+}
+
+test_init_scaffolds_claude_md_with_auto_invocation() {
+  # n2o init should create CLAUDE.md with auto-invocation instructions
+  "$N2O_DIR/n2o" init "$TEST_DIR" </dev/null >/dev/null 2>&1 || true
+
+  if [[ ! -f "$TEST_DIR/CLAUDE.md" ]]; then
+    echo "    ASSERT FAILED: n2o init did not create CLAUDE.md" >&2
+    return 1
+  fi
+
+  if ! grep -q 'auto.invoc' "$TEST_DIR/CLAUDE.md" 2>/dev/null && ! grep -q 'auto_invoke' "$TEST_DIR/CLAUDE.md" 2>/dev/null; then
+    echo "    ASSERT FAILED: scaffolded CLAUDE.md missing auto-invocation instruction" >&2
+    return 1
+  fi
+}
+
+# =============================================================================
 # Run tests
 # =============================================================================
 
@@ -261,6 +411,17 @@ run_test "All descriptions are substantive (80+ chars)"          test_descriptio
 run_test "Agent skills have contextual triggers"                 test_agent_skills_have_contextual_triggers
 run_test "Pattern skills have ambient/passive language"          test_pattern_skills_have_ambient_language
 run_test "lint-skills.sh still passes"                           test_lint_skills_still_passes
+
+echo ""
+echo -e "${BOLD}Task 2: CLAUDE.md template & config${NC}"
+run_test "Config template has auto_invoke_skills: true"          test_config_template_has_auto_invoke_skills
+run_test "Config template has disabled_skills: []"               test_config_template_has_disabled_skills
+run_test "CLAUDE.md template has auto-invocation instruction"    test_claude_template_has_auto_invocation_instruction
+run_test "CLAUDE.md template describes pattern skills as ambient" test_claude_template_mentions_pattern_skills_ambient
+run_test "CLAUDE.md template references config.json"             test_claude_template_references_config
+run_test "CLAUDE.md template keeps detect-project instruction"   test_claude_template_keeps_detect_project_instruction
+run_test_with_setup "n2o init scaffolds auto_invoke_skills config" test_init_scaffolds_auto_invoke_config
+run_test_with_setup "n2o init scaffolds CLAUDE.md with auto-invocation" test_init_scaffolds_claude_md_with_auto_invocation
 
 # =============================================================================
 # Summary
