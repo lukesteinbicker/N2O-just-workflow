@@ -7,6 +7,7 @@ set -e
 #   n2o init <project-path> [--interactive] [--register]
 #   n2o sync <project-path> [--dry-run]
 #   n2o sync --all [--dry-run]
+#   n2o stats [--json]
 # =============================================================================
 
 N2O_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -80,13 +81,109 @@ fill_template() {
   local lint_cmd="$5"
   local build_cmd="$6"
 
-  sed -i \
+  sed -i '' \
     -e "s|{{project_name}}|${project_name}|g" \
     -e "s|{{test_command}}|${test_cmd}|g" \
     -e "s|{{typecheck_command}}|${typecheck_cmd}|g" \
     -e "s|{{lint_command}}|${lint_cmd}|g" \
     -e "s|{{build_command}}|${build_cmd}|g" \
     "$file"
+}
+
+# -----------------------------------------------------------------------------
+# Migration helpers
+# -----------------------------------------------------------------------------
+
+# Compute SHA256 checksum of a file
+file_checksum() {
+  shasum -a 256 "$1" | awk '{print $1}'
+}
+
+# Apply pending migrations to a project's tasks.db
+# Usage: apply_migrations <project_path>
+apply_migrations() {
+  local project_path="$1"
+  local db="$project_path/.pm/tasks.db"
+  local migrations_dir="$project_path/.pm/migrations"
+  local applied=0
+
+  if [[ ! -d "$migrations_dir" ]]; then
+    return 0
+  fi
+
+  # List migration files sorted numerically
+  local migration_files
+  migration_files=$(find "$migrations_dir" -maxdepth 1 -name '*.sql' -type f 2>/dev/null | sort)
+
+  if [[ -z "$migration_files" ]]; then
+    return 0
+  fi
+
+  # Ensure _migrations table exists (for databases created before migration support)
+  sqlite3 "$db" "CREATE TABLE IF NOT EXISTS _migrations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    applied_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    framework_version TEXT,
+    checksum TEXT
+  );" 2>/dev/null
+
+  while IFS= read -r migration_file; do
+    local name
+    name=$(basename "$migration_file" .sql)
+
+    # Skip if already applied
+    local already_applied
+    already_applied=$(sqlite3 "$db" "SELECT COUNT(*) FROM _migrations WHERE name='$name';" 2>/dev/null)
+    if [[ "$already_applied" == "1" ]]; then
+      continue
+    fi
+
+    # Apply the migration
+    if sqlite3 "$db" < "$migration_file" 2>/dev/null; then
+      local checksum
+      checksum=$(file_checksum "$migration_file")
+      sqlite3 "$db" "INSERT INTO _migrations (name, framework_version, checksum) VALUES ('$name', '$VERSION', '$checksum');"
+      log_success "Applied migration: $name"
+      ((applied++)) || true
+    else
+      log_error "Migration failed: $name"
+      return 1
+    fi
+  done <<< "$migration_files"
+
+  if [[ $applied -eq 0 ]]; then
+    log_info "No pending migrations"
+  else
+    log_success "Applied $applied migration(s)"
+  fi
+}
+
+# Seed _migrations table with all existing migration files (for fresh installs)
+# Marks them as applied without running them (the fresh schema already has their changes)
+seed_migrations() {
+  local project_path="$1"
+  local db="$project_path/.pm/tasks.db"
+  local migrations_dir="$project_path/.pm/migrations"
+
+  if [[ ! -d "$migrations_dir" ]]; then
+    return 0
+  fi
+
+  local migration_files
+  migration_files=$(find "$migrations_dir" -maxdepth 1 -name '*.sql' -type f 2>/dev/null | sort)
+
+  if [[ -z "$migration_files" ]]; then
+    return 0
+  fi
+
+  while IFS= read -r migration_file; do
+    local name
+    name=$(basename "$migration_file" .sql)
+    local checksum
+    checksum=$(file_checksum "$migration_file")
+    sqlite3 "$db" "INSERT OR IGNORE INTO _migrations (name, framework_version, checksum) VALUES ('$name', '$VERSION', '$checksum');" 2>/dev/null
+  done <<< "$migration_files"
 }
 
 # Register a project path in .n2o-projects.json
@@ -214,7 +311,7 @@ cmd_init() {
   fi
 
   # Resolve to absolute path
-  project_path="$(cd "$project_path" 2>/dev/null && pwd || mkdir -p "$project_path" && cd "$project_path" && pwd)"
+  project_path="$(cd "$project_path" 2>/dev/null && pwd || { mkdir -p "$project_path" && cd "$project_path" && pwd; })"
 
   log_header "Initializing N2O workflow in: $project_path"
 
@@ -261,6 +358,19 @@ cmd_init() {
   if [[ -f "$N2O_DIR/.pm/schema.sql" ]]; then
     cp "$N2O_DIR/.pm/schema.sql" "$project_path/.pm/schema.sql"
     log_success "Copied schema.sql → .pm/"
+  fi
+
+  # Migrations → .pm/migrations/
+  if [[ -d "$N2O_DIR/.pm/migrations" ]]; then
+    mkdir -p "$project_path/.pm/migrations"
+    local migration_count=0
+    while IFS= read -r f; do
+      cp "$f" "$project_path/.pm/migrations/"
+      ((migration_count++)) || true
+    done < <(find "$N2O_DIR/.pm/migrations" -maxdepth 1 -name '*.sql' -type f 2>/dev/null)
+    if [[ $migration_count -gt 0 ]]; then
+      log_success "Copied $migration_count migration(s) → .pm/migrations/"
+    fi
   fi
 
   # Scripts → scripts/
@@ -323,7 +433,7 @@ cmd_init() {
   if [[ ! -f "$project_path/CLAUDE.md" ]]; then
     cp "$N2O_DIR/templates/CLAUDE.md" "$project_path/CLAUDE.md"
     fill_template "$project_path/CLAUDE.md" "$project_name" "$test_cmd" "$typecheck_cmd" "$lint_cmd" "$build_cmd"
-    log_success "Created CLAUDE.md"
+    log_success "Created CLAUDE.md (Claude will auto-detect project structure on first run)"
   else
     log_info "Exists: CLAUDE.md (skipped)"
   fi
@@ -347,6 +457,7 @@ cmd_init() {
         log_success "Applied schema extensions"
       fi
     fi
+    seed_migrations "$project_path"
     log_success "Created .pm/tasks.db"
   else
     log_info "Exists: .pm/tasks.db (skipped)"
@@ -407,9 +518,9 @@ HELPER
   echo "  Database: .pm/tasks.db"
   echo ""
   echo "  Next steps:"
-  echo "    1. Review and fill in CLAUDE.md with project-specific context"
-  echo "    2. Edit .pm/config.json if commands need adjustment"
-  echo "    3. Start planning: invoke the /pm-agent skill"
+  echo "    1. Open Claude Code — it will automatically offer to scan your project"
+  echo "    2. Review .pm/config.json if commands need adjustment"
+  echo "    3. Start planning: invoke /pm-agent"
   echo ""
 }
 
@@ -530,21 +641,17 @@ sync_project() {
     fi
   done
 
-  # ---- Handle schema migration ----
-  if $schema_changed && ! $dry_run; then
-    echo ""
-    log_warn "schema.sql has changed."
-    read -rp "  Run schema migration on tasks.db? (y/N): " confirm
-    if [[ "$confirm" == "y" || "$confirm" == "Y" ]]; then
-      backup_file "$project_path/.pm/tasks.db" "$backup_dir"
-      sqlite3 "$project_path/.pm/tasks.db" < "$project_path/.pm/schema.sql"
-      log_success "Applied schema.sql to tasks.db"
+  # ---- Apply pending migrations ----
+  if ! $dry_run && [[ -f "$project_path/.pm/tasks.db" ]]; then
+    log_header "Migrations"
+    backup_file "$project_path/.pm/tasks.db" "$backup_dir"
+    apply_migrations "$project_path"
 
-      if [[ -f "$project_path/.pm/schema-extensions.sql" ]]; then
-        if grep -qE '^\s*(CREATE|ALTER|INSERT|DROP)' "$project_path/.pm/schema-extensions.sql" 2>/dev/null; then
-          sqlite3 "$project_path/.pm/tasks.db" < "$project_path/.pm/schema-extensions.sql"
-          log_success "Applied schema-extensions.sql"
-        fi
+    # Re-apply schema-extensions after migrations
+    if [[ -f "$project_path/.pm/schema-extensions.sql" ]]; then
+      if grep -qE '^\s*(CREATE|ALTER|INSERT|DROP)' "$project_path/.pm/schema-extensions.sql" 2>/dev/null; then
+        sqlite3 "$project_path/.pm/tasks.db" < "$project_path/.pm/schema-extensions.sql" 2>/dev/null || true
+        log_info "Re-applied schema-extensions.sql"
       fi
     fi
   fi
@@ -621,6 +728,333 @@ backup_file() {
 }
 
 # =============================================================================
+# STATS COMMAND
+# =============================================================================
+
+# Format a number with commas (e.g., 1234567 -> 1,234,567)
+format_number() {
+  local n="$1"
+  # Handle empty/null
+  if [[ -z "$n" || "$n" == "null" ]]; then
+    echo "0"
+    return
+  fi
+  # Use printf with locale-aware grouping, fall back to awk
+  # LC_NUMERIC=en_US printf is unreliable across platforms, so use awk
+  printf "%d" "$n" 2>/dev/null | awk '{
+    s = $0
+    len = length(s)
+    out = ""
+    for (i = len; i > 0; i--) {
+      out = substr(s, i, 1) out
+      if ((len - i + 1) % 3 == 0 && i > 1)
+        out = "," out
+    }
+    print out
+  }'
+}
+
+cmd_stats() {
+  local json_output=false
+
+  # Parse args
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --json) json_output=true; shift ;;
+      -*)     log_error "Unknown option: $1"; exit 1 ;;
+      *)      log_error "Unknown argument: $1"; exit 1 ;;
+    esac
+  done
+
+  local db="$N2O_DIR/.pm/tasks.db"
+
+  # Check for database
+  if [[ ! -f "$db" ]]; then
+    log_error "Database not found at $db"
+    log_error "Run 'n2o init' first, then populate the database."
+    exit 1
+  fi
+
+  # Auto-refresh transcript data if the collection script exists
+  if [[ -f "$N2O_DIR/scripts/collect-transcripts.sh" ]]; then
+    if ! $json_output; then
+      log_info "Refreshing transcript data..."
+    fi
+    (cd "$N2O_DIR" && bash scripts/collect-transcripts.sh) &>/dev/null || true
+  fi
+
+  # ---- JSON output mode ----
+  if $json_output; then
+    local sessions_json tool_usage_json sprint_json available_json
+
+    sessions_json=$(sqlite3 -json "$db" "
+      SELECT
+        COUNT(*) FILTER (WHERE parent_session_id IS NULL) as main_sessions,
+        COUNT(*) FILTER (WHERE parent_session_id IS NOT NULL) as subagent_sessions,
+        COUNT(*) as total_sessions,
+        MAX(started_at) as last_session,
+        MAX(session_id) as last_session_id,
+        COALESCE(SUM(total_input_tokens), 0) as total_input_tokens,
+        COALESCE(SUM(total_output_tokens), 0) as total_output_tokens
+      FROM transcripts;
+    " 2>/dev/null || echo "[]")
+
+    tool_usage_json=$(sqlite3 -json "$db" "
+      SELECT tool_name, invocations as calls, sessions
+      FROM skill_usage
+      ORDER BY invocations DESC
+      LIMIT 10;
+    " 2>/dev/null || echo "[]")
+
+    sprint_json=$(sqlite3 -json "$db" "
+      SELECT sprint, total_tasks as total, green as done, pending, percent_complete as pct
+      FROM sprint_progress
+      ORDER BY percent_complete DESC, sprint;
+    " 2>/dev/null || echo "[]")
+
+    available_json=$(sqlite3 -json "$db" "
+      SELECT sprint, task_num, title, priority
+      FROM available_tasks
+      ORDER BY priority ASC NULLS LAST
+      LIMIT 15;
+    " 2>/dev/null || echo "[]")
+
+    # Compose top-level JSON
+    jq -n \
+      --argjson sessions "$sessions_json" \
+      --argjson tools "$tool_usage_json" \
+      --argjson sprints "$sprint_json" \
+      --argjson available "$available_json" \
+      '{
+        sessions: ($sessions[0] // {}),
+        tool_usage: $tools,
+        sprint_progress: $sprints,
+        available_tasks: $available
+      }'
+    return
+  fi
+
+  # ---- Formatted terminal output ----
+
+  # === Section 1: Session Summary ===
+  log_header "Session Summary"
+
+  local main_sessions subagent_sessions last_session last_session_id total_input total_output
+  main_sessions=$(sqlite3 "$db" "SELECT COUNT(*) FROM transcripts WHERE parent_session_id IS NULL;" 2>/dev/null || echo "0")
+  subagent_sessions=$(sqlite3 "$db" "SELECT COUNT(*) FROM transcripts WHERE parent_session_id IS NOT NULL;" 2>/dev/null || echo "0")
+  last_session=$(sqlite3 "$db" "SELECT COALESCE(MAX(started_at), 'n/a') FROM transcripts;" 2>/dev/null || echo "n/a")
+  last_session_id=$(sqlite3 "$db" "SELECT session_id FROM transcripts ORDER BY started_at DESC LIMIT 1;" 2>/dev/null || echo "unknown")
+  total_input=$(sqlite3 "$db" "SELECT COALESCE(SUM(total_input_tokens), 0) FROM transcripts;" 2>/dev/null || echo "0")
+  total_output=$(sqlite3 "$db" "SELECT COALESCE(SUM(total_output_tokens), 0) FROM transcripts;" 2>/dev/null || echo "0")
+
+  # Truncate session_id display to first 8 chars
+  local last_sid_display="${last_session_id:0:8}"
+  # Truncate last_session to just the date portion if it has a time
+  local last_date="${last_session%T*}"
+
+  echo -e "  Sessions: ${BOLD}${main_sessions}${NC} main + ${BOLD}${subagent_sessions}${NC} subagent transcripts"
+  echo -e "  Last session: ${last_date} (${last_sid_display}...)"
+  echo -e "  Total tokens: ${BOLD}$(format_number "$total_input")${NC} input / ${BOLD}$(format_number "$total_output")${NC} output"
+
+  # === Section 2: Tool Usage (top 10) ===
+  log_header "Tool Usage (top 10)"
+
+  local tool_data
+  tool_data=$(sqlite3 -separator '|' "$db" "
+    SELECT tool_name, invocations, sessions
+    FROM skill_usage
+    ORDER BY invocations DESC
+    LIMIT 10;
+  " 2>/dev/null || echo "")
+
+  if [[ -n "$tool_data" ]]; then
+    printf "  ${BOLD}%-20s %8s %8s${NC}\n" "Tool" "Calls" "Sessions"
+    printf "  %-20s %8s %8s\n" "--------------------" "--------" "--------"
+    while IFS='|' read -r tool_name calls sessions; do
+      printf "  %-20s %8s %8s\n" "$tool_name" "$calls" "$sessions"
+    done <<< "$tool_data"
+  else
+    echo -e "  ${YELLOW}No tool usage data available.${NC}"
+  fi
+
+  # === Section 3: Sprint Progress ===
+  log_header "Sprint Progress"
+
+  local sprint_data
+  sprint_data=$(sqlite3 -separator '|' "$db" "
+    SELECT sprint, total_tasks, green, pending, CAST(ROUND(percent_complete) AS INTEGER)
+    FROM sprint_progress
+    ORDER BY percent_complete DESC, sprint;
+  " 2>/dev/null || echo "")
+
+  if [[ -n "$sprint_data" ]]; then
+    printf "  ${BOLD}%-22s %6s %6s %8s %5s${NC}\n" "Sprint" "Total" "Done" "Pending" "%"
+    printf "  %-22s %6s %6s %8s %5s\n" "----------------------" "------" "------" "--------" "-----"
+    while IFS='|' read -r sprint total done pending pct; do
+      # Color the percentage: green if 100%, yellow if partial, default if 0%
+      local pct_color="$NC"
+      if [[ "$pct" == "100" ]]; then
+        pct_color="$GREEN"
+      elif [[ "$pct" -gt 0 ]] 2>/dev/null; then
+        pct_color="$YELLOW"
+      fi
+      printf "  %-22s %6s %6s %8s ${pct_color}%4s%%${NC}\n" "$sprint" "$total" "$done" "$pending" "$pct"
+    done <<< "$sprint_data"
+  else
+    echo -e "  ${YELLOW}No sprint data available.${NC}"
+  fi
+
+  # === Section 4: Available Tasks ===
+  log_header "Available Tasks (next up)"
+
+  local available_data
+  available_data=$(sqlite3 -separator '|' "$db" "
+    SELECT sprint, task_num, title, COALESCE(priority, 'n/a')
+    FROM available_tasks
+    ORDER BY priority ASC NULLS LAST
+    LIMIT 15;
+  " 2>/dev/null || echo "")
+
+  if [[ -n "$available_data" ]]; then
+    printf "  ${BOLD}%-16s %-50s %8s${NC}\n" "Sprint/#" "Title" "Priority"
+    printf "  %-16s %-50s %8s\n" "----------------" "--------------------------------------------------" "--------"
+    while IFS='|' read -r sprint task_num title priority; do
+      local sprint_task="${sprint}/${task_num}"
+      # Truncate title if too long
+      if [[ ${#title} -gt 50 ]]; then
+        title="${title:0:47}..."
+      fi
+      printf "  %-16s %-50s %8s\n" "$sprint_task" "$title" "$priority"
+    done <<< "$available_data"
+  else
+    echo -e "  ${GREEN}No pending tasks — all caught up!${NC}"
+  fi
+
+  echo ""
+}
+
+# =============================================================================
+# MIGRATE COMMAND
+# =============================================================================
+
+cmd_migrate() {
+  local project_path=""
+  local action=""
+
+  # Parse args
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --apply)   action="apply"; shift ;;
+      --status)  action="status"; shift ;;
+      --generate) action="generate"; shift ;;
+      -*)        log_error "Unknown option: $1"; exit 1 ;;
+      *)         project_path="$1"; shift ;;
+    esac
+  done
+
+  if [[ -z "$action" ]]; then
+    log_error "Usage: n2o migrate --apply|--status|--generate <project-path>"
+    exit 1
+  fi
+
+  if [[ -z "$project_path" ]]; then
+    log_error "Usage: n2o migrate --$action <project-path>"
+    exit 1
+  fi
+
+  project_path="$(cd "$project_path" && pwd)"
+
+  if [[ ! -f "$project_path/.pm/config.json" ]]; then
+    log_error "Not an N2O project (missing .pm/config.json). Run 'n2o init' first."
+    exit 1
+  fi
+
+  case "$action" in
+    apply)
+      log_header "Applying migrations: $project_path"
+      apply_migrations "$project_path"
+      ;;
+    status)
+      migrate_status "$project_path"
+      ;;
+    generate)
+      log_error "Not yet implemented. See task 3 in schema-migrations sprint."
+      exit 1
+      ;;
+  esac
+}
+
+migrate_status() {
+  local project_path="$1"
+  local db="$project_path/.pm/tasks.db"
+  local migrations_dir="$project_path/.pm/migrations"
+
+  if [[ ! -f "$db" ]]; then
+    log_error "Database not found: $db"
+    exit 1
+  fi
+
+  # Ensure _migrations table exists
+  sqlite3 "$db" "CREATE TABLE IF NOT EXISTS _migrations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    applied_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    framework_version TEXT,
+    checksum TEXT
+  );" 2>/dev/null
+
+  local applied_count
+  applied_count=$(sqlite3 "$db" "SELECT COUNT(*) FROM _migrations;" 2>/dev/null || echo "0")
+
+  # Count pending (migration files not in _migrations)
+  local pending_count=0
+  if [[ -d "$migrations_dir" ]]; then
+    local migration_files
+    migration_files=$(find "$migrations_dir" -maxdepth 1 -name '*.sql' -type f 2>/dev/null | sort)
+    if [[ -n "$migration_files" ]]; then
+      while IFS= read -r f; do
+        local name
+        name=$(basename "$f" .sql)
+        local is_applied
+        is_applied=$(sqlite3 "$db" "SELECT COUNT(*) FROM _migrations WHERE name='$name';" 2>/dev/null)
+        if [[ "$is_applied" == "0" ]]; then
+          ((pending_count++)) || true
+        fi
+      done <<< "$migration_files"
+    fi
+  fi
+
+  log_header "Migration Status: $(basename "$project_path")"
+  echo -e "  ${BOLD}$applied_count${NC} applied, ${BOLD}$pending_count${NC} pending"
+
+  if [[ "$applied_count" -gt 0 ]]; then
+    echo ""
+    echo -e "  ${BOLD}Applied:${NC}"
+    sqlite3 "$db" "SELECT '    ' || name || ' (' || framework_version || ', ' || applied_at || ')' FROM _migrations ORDER BY id;" 2>/dev/null
+  fi
+
+  if [[ "$pending_count" -gt 0 ]]; then
+    echo ""
+    echo -e "  ${BOLD}Pending:${NC}"
+    if [[ -d "$migrations_dir" ]]; then
+      local migration_files
+      migration_files=$(find "$migrations_dir" -maxdepth 1 -name '*.sql' -type f 2>/dev/null | sort)
+      while IFS= read -r f; do
+        local name
+        name=$(basename "$f" .sql)
+        local is_applied
+        is_applied=$(sqlite3 "$db" "SELECT COUNT(*) FROM _migrations WHERE name='$name';" 2>/dev/null)
+        if [[ "$is_applied" == "0" ]]; then
+          echo "    $name"
+        fi
+      done <<< "$migration_files"
+    fi
+  fi
+
+  echo ""
+}
+
+# =============================================================================
 # MAIN
 # =============================================================================
 
@@ -637,6 +1071,12 @@ main() {
     sync)
       cmd_sync "$@"
       ;;
+    migrate)
+      cmd_migrate "$@"
+      ;;
+    stats)
+      cmd_stats "$@"
+      ;;
     version|--version|-v)
       echo "n2o v$VERSION"
       ;;
@@ -652,6 +1092,18 @@ main() {
       echo ""
       echo "  n2o sync --all [--dry-run]"
       echo "      Push framework updates to all registered projects."
+      echo ""
+      echo "  n2o migrate --apply <project-path>"
+      echo "      Apply pending schema migrations to a project's tasks.db."
+      echo ""
+      echo "  n2o migrate --status <project-path>"
+      echo "      Show applied and pending migrations for a project."
+      echo ""
+      echo "  n2o migrate --generate <project-path>"
+      echo "      Auto-generate a migration by diffing schema.sql changes."
+      echo ""
+      echo "  n2o stats [--json]"
+      echo "      Show project statistics: sessions, tool usage, sprint progress."
       echo ""
       echo "  n2o version"
       echo "      Print the current framework version."
