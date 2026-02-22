@@ -1,0 +1,12 @@
+-- .pm/schema-extensions.sql
+-- Project-specific schema extensions. This file is never overwritten by n2o sync.
+-- It runs after schema.sql when initializing or migrating the database.
+--
+-- Examples:
+--
+-- ALTER TABLE tasks ADD COLUMN client TEXT;
+--
+-- CREATE VIEW IF NOT EXISTS tasks_by_client AS
+-- SELECT client, COUNT(*) as total,
+--     SUM(CASE WHEN status = 'green' THEN 1 ELSE 0 END) as done
+-- FROM tasks GROUP BY client;

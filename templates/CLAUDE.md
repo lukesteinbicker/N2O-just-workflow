@@ -1,5 +1,14 @@
 # Project: {{project_name}}
 
+<!-- AGENT INSTRUCTION: If any sections below contain "UNFILLED" markers,
+     you MUST offer to scan the codebase and fill them in before doing anything else.
+     Say: "I notice some project context hasn't been set up yet. Want me to scan the
+     codebase and fill it in?" If the user agrees, follow the instructions in
+     .claude/skills/detect-project/SKILL.md to explore and populate each section.
+     Once a section is filled, replace its UNFILLED comment with FILLED.
+     If nothing is found for a section, write "N/A — not yet added" so this
+     doesn't re-trigger. -->
+
 ## Framework
 
 This project uses the N2O workflow system. See skills in `.claude/skills/` for:
@@ -18,23 +27,46 @@ Commands are configured in `.pm/config.json` and used by agents:
 - Lint: `{{lint_command}}`
 - Build: `{{build_command}}`
 
-## Project Context
+## Project Structure
 
-<!-- Fill in project-specific information below -->
+<!-- UNFILLED -->
 
-### Database
-- Type:
-- Connection:
+| Type | Path |
+|------|------|
+| UI Components | |
+| Hooks | |
+| Server Actions | |
+| API Routes | |
+| Pages / Routes | |
+| Shared Utilities | |
+| Types / Interfaces | |
 
-### Architecture
--
+## Database
 
-### Key APIs / External Services
--
+<!-- UNFILLED -->
 
-### Testing
-- Test command: `{{test_command}}`
--
+- **Type**:
+- **Connection**:
+- **Environment Variable**:
+- **Migration Command**:
+- **Migration Status**:
 
-### Notes
--
+## Architecture
+
+<!-- UNFILLED -->
+
+## Conventions
+
+<!-- UNFILLED -->
+
+- **Styling**:
+- **State Management**:
+- **Auth**:
+
+## Key APIs / External Services
+
+<!-- UNFILLED -->
+
+## Notes
+
+<!-- Add any additional project context here -->

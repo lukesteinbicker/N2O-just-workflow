@@ -103,8 +103,8 @@ test('debug login issue', async ({ page }) => {
 
 **Run and analyze**:
 ```bash
-mkdir -p apps/app/__tests__/screenshots/temp
-pnpm --filter app test apps/app/__tests__/temp-debug.spec.ts
+mkdir -p __tests__/screenshots/temp
+# Use your project's test command (from .pm/config.json) to run the temp test
 # Read screenshots + terminal output to diagnose
 ```
 
@@ -142,8 +142,9 @@ page.on('pageerror', err => console.log('PAGE ERROR:', err.message));
 ### Cleanup
 
 ```bash
-rm apps/app/__tests__/temp-debug.spec.ts
-rm -rf apps/app/__tests__/screenshots/temp/
+# Delete the temp test file and screenshots when done
+rm <your-temp-test-file>
+rm -rf __tests__/screenshots/temp/
 ```
 
 ---
@@ -151,6 +152,10 @@ rm -rf apps/app/__tests__/screenshots/temp/
 ## The Five Phases
 
 ### Phase 1: REPRODUCE
+
+```bash
+sqlite3 .pm/tasks.db "INSERT INTO workflow_events (sprint, task_num, event_type, skill_name, phase, session_id) VALUES ('${sprint}', ${taskNum}, 'phase_entered', 'bug-workflow', 'REPRODUCE', '$(echo $CLAUDE_SESSION_ID)');"
+```
 
 **Goal:** Confirm bug exists via manual steps.
 
@@ -172,6 +177,10 @@ rm -rf apps/app/__tests__/screenshots/temp/
 ```
 
 ### Phase 2: INVESTIGATE
+
+```bash
+sqlite3 .pm/tasks.db "INSERT INTO workflow_events (sprint, task_num, event_type, skill_name, phase, session_id) VALUES ('${sprint}', ${taskNum}, 'phase_entered', 'bug-workflow', 'INVESTIGATE', '$(echo $CLAUDE_SESSION_ID)');"
+```
 
 **Goal:** Find root cause using evidence-gathering tools.
 
@@ -197,6 +206,10 @@ console.error('DEBUG parseCSVPreview:', {
 
 ### Phase 3: SCOPE
 
+```bash
+sqlite3 .pm/tasks.db "INSERT INTO workflow_events (sprint, task_num, event_type, skill_name, phase, session_id) VALUES ('${sprint}', ${taskNum}, 'phase_entered', 'bug-workflow', 'SCOPE', '$(echo $CLAUDE_SESSION_ID)');"
+```
+
 **Goal:** Define fix boundary and test strategy.
 
 | Question | Answer |
@@ -207,6 +220,10 @@ console.error('DEBUG parseCSVPreview:', {
 | What assertion proves fix? | "headers returned for empty-first-row CSV" |
 
 ### Phase 4: HYPOTHESIS
+
+```bash
+sqlite3 .pm/tasks.db "INSERT INTO workflow_events (sprint, task_num, event_type, skill_name, phase, session_id) VALUES ('${sprint}', ${taskNum}, 'phase_entered', 'bug-workflow', 'HYPOTHESIS', '$(echo $CLAUDE_SESSION_ID)');"
+```
 
 **Goal:** Confirm root cause theory.
 
@@ -219,6 +236,10 @@ Verification: Added console.log, confirmed headers array is empty.
 **If hypothesis wrong:** Return to Phase 2.
 
 ### Phase 5: TASK
+
+```bash
+sqlite3 .pm/tasks.db "INSERT INTO workflow_events (sprint, task_num, event_type, skill_name, phase, session_id) VALUES ('${sprint}', ${taskNum}, 'phase_entered', 'bug-workflow', 'TASK', '$(echo $CLAUDE_SESSION_ID)');"
+```
 
 **Goal:** Generate task for tdd-agent.
 
@@ -282,49 +303,28 @@ tdd-agent starts:
 
 ### Essential Database Commands
 
-> **Note:** This project uses Neon database on the development branch. Connection string is in `DATABASE_URL_DEV` environment variable.
+> **Note:** Check `CLAUDE.md` → Database for your project's database type, connection details, and migration commands. Check `.pm/config.json` for configured commands.
 
 **Interactive database access:**
 ```bash
-# Direct psql connection
-psql $DATABASE_URL_DEV
-
-# Or from .env.local
-psql "$(grep DATABASE_URL_DEV .env.local | cut -d '=' -f2-)"
-
-# Or use Neon SQL Editor (web-based)
-# Access via https://console.neon.tech
-```
-
-**One-off queries:**
-```bash
-psql $DATABASE_URL_DEV -c "SELECT id, status FROM your_table LIMIT 5;"
+# Connection details are in CLAUDE.md → Database section
+# Common patterns:
+psql $YOUR_DATABASE_URL              # PostgreSQL
+sqlite3 path/to/your.db             # SQLite
+mysql -u user -p database            # MySQL
 ```
 
 **Migration commands:**
 ```bash
-# Check migration status
-cd packages/database && pnpm migrate:dev:status
-
-# Run migrations
-cd packages/database && pnpm migrate:dev:up
+# Check CLAUDE.md → Database for project-specific migration commands
 ```
 
 ### Common Debugging Queries
 
-**View recent data:**
 ```bash
-psql $DATABASE_URL_DEV -c "
-SELECT id, email, created_at FROM user ORDER BY created_at DESC LIMIT 5;
-"
+# Adapt these to your database type and schema (documented in CLAUDE.md)
+# View recent data, check table schema, etc.
 ```
-
-**Check table schema:**
-```bash
-psql $DATABASE_URL_DEV -c "\d your_table"
-```
-
-> **Note:** Update examples as you add more tables to your schema. Currently, the database only has the `user` table (BetterAuth schema).
 
 ### Code Investigation
 
@@ -343,22 +343,24 @@ git diff HEAD~3 -- path/to/file
 
 | Symptom | Diagnosis | Resolution |
 |---------|-----------|-----------|
-| Connection refused | Connection string invalid | Check `DATABASE_URL_DEV` in `.env.local` |
-| Connection timeout | Network/Neon service issue | Check internet, Neon dashboard status |
+| Connection refused | Connection string invalid | Check database config in `CLAUDE.md` → Database |
+| Connection timeout | Network/service issue | Check internet, database provider dashboard |
 | Permission denied | Database permissions | Check table permissions, verify connection string |
-| Migration failed | Check migration status | `cd packages/database && pnpm migrate:dev:status`, check Neon logs |
+| Migration failed | Check migration status | Run migration status command from `CLAUDE.md` → Database |
 | Empty results | Query logic issue | Verify WHERE clauses, check data exists |
 
 ---
 
 ## Test Commands (for tdd-agent)
 
-| Command | What It Tests |
-|---------|--------------|
-| `pnpm test` | All tests (Vitest) |
-| `pnpm typecheck` | TypeScript type checking |
-| `pnpm check` | Lint (Ultracite) |
-| `pnpm build` | Build all packages/apps |
+Commands are configured in `.pm/config.json`:
+
+```bash
+jq -r '.commands.test' .pm/config.json       # Test command
+jq -r '.commands.typecheck' .pm/config.json   # Typecheck command
+jq -r '.commands.lint' .pm/config.json        # Lint command
+jq -r '.commands.build' .pm/config.json       # Build command
+```
 
 ---
 
@@ -385,6 +387,12 @@ git diff HEAD~3 -- path/to/file
 ```
 
 ---
+
+### Workflow Complete
+
+```bash
+sqlite3 .pm/tasks.db "INSERT INTO workflow_events (sprint, task_num, event_type, skill_name, phase, metadata) VALUES ('${sprint}', ${taskNum}, 'task_completed', 'bug-workflow', 'DONE', '{\"status\": \"completed\"}');"
+```
 
 **Status:** ACTIVE
 **Output:** Task in `.pm/tasks.db` (sprint: hotfix)

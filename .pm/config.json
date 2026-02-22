@@ -1,0 +1,20 @@
+{
+  "n2o_version": "1.0.0",
+  "project_name": "N2O-just-workflow",
+
+  "commands": {
+    "test": "",
+    "typecheck": "",
+    "lint": "",
+    "build": ""
+  },
+
+  "database": {
+    "type": "",
+    "env_var": ""
+  },
+
+  "pm_tool": null,
+
+  "team": []
+}

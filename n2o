@@ -201,6 +201,46 @@ validate_sync_categories() {
   done
 }
 
+# Register or merge the N2O SessionStart hook into .claude/settings.json
+register_session_hook() {
+  local project_path="$1"
+  local settings_file="$project_path/.claude/settings.json"
+
+  local n2o_hook='{"hooks":{"SessionStart":[{"matcher":"startup","hooks":[{"type":"command","command":"bash scripts/n2o-session-hook.sh","timeout":5}]}]}}'
+
+  if [[ ! -f "$settings_file" ]]; then
+    # Create fresh settings with just our hook
+    echo "$n2o_hook" | jq '.' > "$settings_file"
+    log_success "Created .claude/settings.json with SessionStart hook"
+    return
+  fi
+
+  # Check if our hook command is already registered
+  if jq -e '.hooks.SessionStart[]?.hooks[]? | select(.command == "bash scripts/n2o-session-hook.sh")' "$settings_file" &>/dev/null; then
+    log_info "SessionStart hook already registered"
+    return
+  fi
+
+  # Merge: add our SessionStart hook entry without destroying existing hooks
+  local tmp
+  tmp=$(mktemp)
+  local n2o_entry='{"matcher":"startup","hooks":[{"type":"command","command":"bash scripts/n2o-session-hook.sh","timeout":5}]}'
+
+  if jq -e '.hooks.SessionStart' "$settings_file" &>/dev/null; then
+    # SessionStart array exists — append our entry
+    jq --argjson entry "$n2o_entry" '.hooks.SessionStart += [$entry]' "$settings_file" > "$tmp"
+  elif jq -e '.hooks' "$settings_file" &>/dev/null; then
+    # hooks object exists but no SessionStart — add the key
+    jq --argjson entry "$n2o_entry" '.hooks.SessionStart = [$entry]' "$settings_file" > "$tmp"
+  else
+    # No hooks at all — add the whole structure
+    jq --argjson entry "$n2o_entry" '.hooks = {"SessionStart": [$entry]}' "$settings_file" > "$tmp"
+  fi
+
+  mv "$tmp" "$settings_file"
+  log_success "Added SessionStart hook to .claude/settings.json"
+}
+
 check_deps() {
   for cmd in jq sqlite3; do
     if ! command -v "$cmd" &>/dev/null; then
@@ -787,7 +827,7 @@ cmd_init() {
   # ---- Step 6: Update .gitignore ----
   log_header "6. Updating .gitignore"
   local gitignore="$project_path/.gitignore"
-  local entries=(".pm/tasks.db" ".wm/" ".env.local" ".n2o-backup/")
+  local entries=(".pm/tasks.db" ".wm/" ".env.local" ".n2o-backup/" ".pm/.last_seen_version")
 
   if [[ ! -f "$gitignore" ]]; then
     touch "$gitignore"
@@ -824,13 +864,17 @@ HELPER
   chmod +x "$project_path/scripts/n2o-config.sh"
   log_success "Created scripts/n2o-config.sh"
 
-  # ---- Step 8: Register project ----
+  # ---- Step 8: Register SessionStart hook ----
+  log_header "8. Registering SessionStart hook"
+  register_session_hook "$project_path"
+
+  # ---- Step 9: Register project ----
   if $do_register; then
-    log_header "8. Registering project"
+    log_header "9. Registering project"
     register_project "$project_path"
   fi
 
-  # ---- Step 9: Health check ----
+  # ---- Step 10: Health check ----
   run_health_check "$project_path" || true
 
   # ---- Done ----
@@ -1091,6 +1135,11 @@ sync_project() {
       jq --arg ver "$VERSION" '.n2o_version = $ver' "$project_path/.pm/config.json" > "$tmp"
     fi
     mv "$tmp" "$project_path/.pm/config.json"
+  fi
+
+  # ---- Ensure SessionStart hook is registered ----
+  if ! $dry_run && should_sync_category "scripts" "$sync_only"; then
+    register_session_hook "$project_path"
   fi
 
   # ---- Summary ----

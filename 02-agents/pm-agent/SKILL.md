@@ -98,6 +98,10 @@ To set up: `claude mcp add --transport sse linear-server https://mcp.linear.app/
 
 ## Phase 1: Ideation
 
+```bash
+sqlite3 .pm/tasks.db "INSERT INTO workflow_events (sprint, task_num, event_type, skill_name, phase, session_id) VALUES ('${sprint}', ${taskNum}, 'phase_entered', 'pm-agent', 'IDEATION', '$(echo $CLAUDE_SESSION_ID)');"
+```
+
 **Trigger**: User research, feature request, brainstorm
 
 **Action**: Capture in `.wm/` (scratch) or `.pm/backlog/` (keep)
@@ -107,6 +111,10 @@ To set up: `claude mcp add --transport sse linear-server https://mcp.linear.app/
 ---
 
 ## Phase 1.5: Audit Current Code (CRITICAL)
+
+```bash
+sqlite3 .pm/tasks.db "INSERT INTO workflow_events (sprint, task_num, event_type, skill_name, phase, session_id) VALUES ('${sprint}', ${taskNum}, 'phase_entered', 'pm-agent', 'AUDIT_CODE', '$(echo $CLAUDE_SESSION_ID)');"
+```
 
 **Before writing ANY spec, audit what already exists.**
 
@@ -137,14 +145,14 @@ grep -r "export \*" packages/ apps/
 
 ### What to Audit
 
-| Before speccing... | Check these locations |
-|--------------------|----------------------|
-| UI components | `packages/design/components/`, `apps/*/app/components/` |
-| Hooks | `packages/*/hooks/`, `apps/*/app/hooks/` |
-| Server actions | `apps/*/app/actions/` or `packages/*/actions/` |
-| API routes | `apps/*/app/api/` |
+| Before speccing... | Where to look |
+|--------------------|---------------|
+| UI components | Check `CLAUDE.md` → Project Structure for component paths |
+| Hooks | Check `CLAUDE.md` → Project Structure for hook paths |
+| Server actions | Check `CLAUDE.md` → Project Structure for action paths |
+| API routes | Check `CLAUDE.md` → Project Structure for route paths |
 
-> **Note:** Update these paths as your project structure evolves. Currently, components are in `packages/design/components/` and app-specific code is in `apps/*/app/`.
+> **Note:** Project-specific paths are defined in the project's `CLAUDE.md` under "Project Structure". Always check there first — never assume a directory layout.
 
 ### Update Specs, Don't Duplicate
 
@@ -158,6 +166,10 @@ If existing code covers 80% of a spec:
 ---
 
 ## Phase 2: Refinement → Spec
+
+```bash
+sqlite3 .pm/tasks.db "INSERT INTO workflow_events (sprint, task_num, event_type, skill_name, phase, session_id) VALUES ('${sprint}', ${taskNum}, 'phase_entered', 'pm-agent', 'REFINEMENT', '$(echo $CLAUDE_SESSION_ID)');"
+```
 
 **Trigger**: Deciding to work on something
 
@@ -270,6 +282,10 @@ For multi-phase features, use separate task tables:
 ---
 
 ## Phase 2.5: Pre-Task Checklist
+
+```bash
+sqlite3 .pm/tasks.db "INSERT INTO workflow_events (sprint, task_num, event_type, skill_name, phase, session_id) VALUES ('${sprint}', ${taskNum}, 'phase_entered', 'pm-agent', 'PRE_TASK_CHECKLIST', '$(echo $CLAUDE_SESSION_ID)');"
+```
 
 **Before translating specs into tasks, run this checklist.**
 
@@ -385,6 +401,10 @@ These are a linear sequence with no branching. One task.
 ---
 
 ## Phase 3: Sprint Planning
+
+```bash
+sqlite3 .pm/tasks.db "INSERT INTO workflow_events (sprint, task_num, event_type, skill_name, phase, session_id) VALUES ('${sprint}', ${taskNum}, 'phase_entered', 'pm-agent', 'SPRINT_PLANNING', '$(echo $CLAUDE_SESSION_ID)');"
+```
 
 **Trigger**: Starting new sprint (after Pre-Task Checklist passes)
 
@@ -512,6 +532,10 @@ sqlite3 .pm/tasks.db "
 
 ## Phase 3.5: Post-Load Audit
 
+```bash
+sqlite3 .pm/tasks.db "INSERT INTO workflow_events (sprint, task_num, event_type, skill_name, phase, session_id) VALUES ('${sprint}', ${taskNum}, 'phase_entered', 'pm-agent', 'POST_LOAD_AUDIT', '$(echo $CLAUDE_SESSION_ID)');"
+```
+
 **Trigger**: Tasks loaded to SQLite, before starting implementation
 
 **Actions**: Run subagent checks to verify task quality and dependencies.
@@ -612,6 +636,10 @@ sqlite3 .pm/tasks.db "
 
 ## Phase 4: Start Implementation
 
+```bash
+sqlite3 .pm/tasks.db "INSERT INTO workflow_events (sprint, task_num, event_type, skill_name, phase, session_id) VALUES ('${sprint}', ${taskNum}, 'phase_entered', 'pm-agent', 'START_IMPLEMENTATION', '$(echo $CLAUDE_SESSION_ID)');"
+```
+
 **Trigger**: Tasks loaded and audited, ready for implementation
 
 **Goal**: Begin task implementation using `/tdd-agent`
@@ -654,6 +682,10 @@ User/Agent:
 ---
 
 ## Phase 4.5: Handle Future Enhancements (Discovered During Implementation)
+
+```bash
+sqlite3 .pm/tasks.db "INSERT INTO workflow_events (sprint, task_num, event_type, skill_name, phase, session_id) VALUES ('${sprint}', ${taskNum}, 'phase_entered', 'pm-agent', 'FUTURE_ENHANCEMENTS', '$(echo $CLAUDE_SESSION_ID)');"
+```
 
 **Trigger**: Discover future work while implementing tasks
 
@@ -784,6 +816,10 @@ Update handlers to call core actions instead of raw SQL.');"
 
 ## Phase 5: Monitor Sprint Progress
 
+```bash
+sqlite3 .pm/tasks.db "INSERT INTO workflow_events (sprint, task_num, event_type, skill_name, phase, session_id) VALUES ('${sprint}', ${taskNum}, 'phase_entered', 'pm-agent', 'MONITOR', '$(echo $CLAUDE_SESSION_ID)');"
+```
+
 **Trigger**: Dev agents are working on tasks
 
 **Action**: Track progress and surface blockers
@@ -818,6 +854,10 @@ sqlite3 -header -column .pm/tasks.db "SELECT * FROM refactor_audit WHERE sprint 
 ---
 
 ## Phase 6: Sprint Completion
+
+```bash
+sqlite3 .pm/tasks.db "INSERT INTO workflow_events (sprint, task_num, event_type, skill_name, phase, session_id) VALUES ('${sprint}', ${taskNum}, 'phase_entered', 'pm-agent', 'SPRINT_COMPLETION', '$(echo $CLAUDE_SESSION_ID)');"
+```
 
 **Trigger**: All tasks green and audited (dev agents report completion)
 
@@ -1034,6 +1074,12 @@ sqlite3 .pm/tasks.db "UPDATE tasks SET status = 'done' WHERE sprint = 'crm-found
 **Key principle**: PM orchestrates, implementation happens in main chat (or parallel tabs as needed).
 
 ---
+
+### Workflow Complete
+
+```bash
+sqlite3 .pm/tasks.db "INSERT INTO workflow_events (sprint, task_num, event_type, skill_name, phase, metadata) VALUES ('${sprint}', ${taskNum}, 'task_completed', 'pm-agent', 'DONE', '{\"status\": \"completed\"}');"
+```
 
 **Status**: LIVE
 **Database**: `.pm/tasks.db` (SQLite via Bash)

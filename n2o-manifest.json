@@ -5,7 +5,8 @@
     "03-patterns/**",
     ".pm/schema.sql",
     ".pm/migrations/**",
-    "scripts/**"
+    "scripts/**",
+    "CHANGELOG.md"
   ],
   "project_files": [
     ".pm/config.json",

@@ -1,11 +1,23 @@
-# Task database (local working state, regenerated from schema + seeds)
+# Task database (binary, regenerated from schema)
 .pm/tasks.db
 
 # Working memory (transitory scratch files)
 .wm/
 
+# Sync backups
+.n2o-backup/
+
+# Project registry (local to your machine)
+.n2o-projects.json
+
+# Obsidian
+.obsidian/
+
 # OS files
 .DS_Store
+
+# Per-developer state
+.pm/.last_seen_version
 
 # Environment
 .env

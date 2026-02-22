@@ -253,6 +253,7 @@ Return to tdd-agent with clear path to RED
 
 ```bash
 sqlite3 .pm/tasks.db "UPDATE tasks SET status = 'red' WHERE id = TASK_ID;"
+sqlite3 .pm/tasks.db "INSERT INTO workflow_events (sprint, task_num, event_type, skill_name, phase, session_id) VALUES ('${sprint}', ${taskNum}, 'phase_entered', 'tdd-agent', 'RED', '$(echo $CLAUDE_SESSION_ID)');"
 ```
 
 ### CRITICAL: Avoid Fake Tests
@@ -419,6 +420,7 @@ describe('parseCSV', () => {
 
 ```bash
 sqlite3 .pm/tasks.db "UPDATE tasks SET status = 'green' WHERE id = TASK_ID;"
+sqlite3 .pm/tasks.db "INSERT INTO workflow_events (sprint, task_num, event_type, skill_name, phase, session_id) VALUES ('${sprint}', ${taskNum}, 'phase_entered', 'tdd-agent', 'GREEN', '$(echo $CLAUDE_SESSION_ID)');"
 ```
 
 ### Important Constraints
@@ -434,6 +436,10 @@ sqlite3 .pm/tasks.db "UPDATE tasks SET status = 'green' WHERE id = TASK_ID;"
 ## Phase 4: REFACTOR (Clean Up)
 
 **Goal**: Improve code quality without changing behavior.
+
+```bash
+sqlite3 .pm/tasks.db "INSERT INTO workflow_events (sprint, task_num, event_type, skill_name, phase, session_id) VALUES ('${sprint}', ${taskNum}, 'phase_entered', 'tdd-agent', 'REFACTOR', '$(echo $CLAUDE_SESSION_ID)');"
+```
 
 ### Steps
 
@@ -466,6 +472,10 @@ Check the relevant skill for patterns:
 ## Phase 5: AUDIT (Quality Checks + 3 Subagents)
 
 **Goal**: Ensure code meets quality standards and follows patterns.
+
+```bash
+sqlite3 .pm/tasks.db "INSERT INTO workflow_events (sprint, task_num, event_type, skill_name, phase, session_id) VALUES ('${sprint}', ${taskNum}, 'phase_entered', 'tdd-agent', 'AUDIT', '$(echo $CLAUDE_SESSION_ID)');"
+```
 
 > **⚠️ STOP: Quality checks alone are NOT sufficient!**
 >
@@ -579,6 +589,10 @@ ACTION ITEMS:
 ## Phase 8: CODIFY (Report Patterns for Review)
 
 **Report patterns found, don't auto-document.** User reviews and decides what to codify.
+
+```bash
+sqlite3 .pm/tasks.db "INSERT INTO workflow_events (sprint, task_num, event_type, skill_name, phase, session_id) VALUES ('${sprint}', ${taskNum}, 'phase_entered', 'tdd-agent', 'CODIFY', '$(echo $CLAUDE_SESSION_ID)');"
+```
 
 ### Output Format: Pattern Report
 
@@ -733,6 +747,10 @@ WHERE id = ${taskId};"
 
 **Target: A grade in Testing Posture.** Loop until achieved (max 2 iterations).
 
+```bash
+sqlite3 .pm/tasks.db "INSERT INTO workflow_events (sprint, task_num, event_type, skill_name, phase, session_id) VALUES ('${sprint}', ${taskNum}, 'phase_entered', 'tdd-agent', 'FIX_AUDIT', '$(echo $CLAUDE_SESSION_ID)');"
+```
+
 ### A Grade Definition
 
 | Criteria | A Grade | Below A |
@@ -805,6 +823,10 @@ After reaching A grade (or max iterations), run Pattern Compliance subagent:
 
 **GATE: Testing Posture MUST be A grade before committing.**
 
+```bash
+sqlite3 .pm/tasks.db "INSERT INTO workflow_events (sprint, task_num, event_type, skill_name, phase, session_id) VALUES ('${sprint}', ${taskNum}, 'phase_entered', 'tdd-agent', 'COMMIT', '$(echo $CLAUDE_SESSION_ID)');"
+```
+
 If Testing Posture < A: DO NOT commit. Return to FIX AUDIT loop.
 
 After FIX AUDIT achieves A grade and CODIFY report is ready:
@@ -823,6 +845,11 @@ After FIX AUDIT achieves A grade and CODIFY report is ready:
 ## Phase 10: FINAL REPORT (Critical)
 
 **The final report is the primary deliverable.** It tells the user what happened, what was fixed, and what patterns were found.
+
+```bash
+sqlite3 .pm/tasks.db "INSERT INTO workflow_events (sprint, task_num, event_type, skill_name, phase, session_id) VALUES ('${sprint}', ${taskNum}, 'phase_entered', 'tdd-agent', 'REPORT', '$(echo $CLAUDE_SESSION_ID)');"
+sqlite3 .pm/tasks.db "INSERT INTO workflow_events (sprint, task_num, event_type, skill_name, phase, metadata) VALUES ('${sprint}', ${taskNum}, 'task_completed', 'tdd-agent', 'REPORT', '{\"status\": \"completed\"}');"
+```
 
 ### Report Structure
 
