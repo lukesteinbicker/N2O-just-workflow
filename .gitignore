@@ -4,6 +4,12 @@
 # Working memory (transitory scratch files)
 .wm/
 
+# Agent worktrees (created by coordination system)
+.worktrees/
+
+# Merge conflict reports
+.pm/conflicts/
+
 # Sync backups
 .n2o-backup/
 
