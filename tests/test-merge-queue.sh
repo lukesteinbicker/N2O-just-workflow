@@ -519,17 +519,27 @@ test_unknown_option_exits_with_message() {
 # =============================================================================
 
 test_no_mergeable_tasks() {
-  # No tasks at all — should exit cleanly and not modify anything
+  # Seed pending + red tasks (not green) — none should be merge-eligible
+  seed_task "s" 1 "Pending task" "pending"
+  seed_task "s" 2 "Red task" "red"
+
   local rc=0
   local output
   output=$(cd "$TEST_DIR" && bash "$MERGE_QUEUE" --once 2>&1) || rc=$?
   assert_equals "0" "$rc" "No mergeable tasks should exit 0"
   assert_output_contains "$output" "single-run" "Should display single-run mode in header"
 
-  # Verify no tasks got a merged_at timestamp
+  # Verify pending/red tasks did NOT get merged_at
   local merged_count
   merged_count=$(sqlite3 "$TEST_DIR/.pm/tasks.db" "SELECT COUNT(*) FROM tasks WHERE merged_at IS NOT NULL;")
-  assert_equals "0" "$merged_count" "No tasks should have merged_at when DB is empty"
+  assert_equals "0" "$merged_count" "Non-green tasks should not be merged"
+
+  # Verify task statuses unchanged
+  local status1 status2
+  status1=$(sqlite3 "$TEST_DIR/.pm/tasks.db" "SELECT status FROM tasks WHERE sprint = 's' AND task_num = 1;")
+  status2=$(sqlite3 "$TEST_DIR/.pm/tasks.db" "SELECT status FROM tasks WHERE sprint = 's' AND task_num = 2;")
+  assert_equals "pending" "$status1" "Pending task should stay pending"
+  assert_equals "red" "$status2" "Red task should stay red"
 }
 
 test_merge_preserves_git_state() {
