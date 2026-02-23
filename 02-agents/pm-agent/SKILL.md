@@ -1,5 +1,6 @@
 ---
 name: pm-agent
+version: "1.0.0"
 description: "Use when the user wants to plan, scope, or break down work. Triggers: create spec, new feature spec, write spec, break down, decompose tasks, task breakdown, sprint planning, plan sprint, pm workflow, project management, planning agent, scope this feature, what should we build, let's plan, create tasks, load tasks, start a sprint. Use this for planning and orchestration — NOT for implementing code (use tdd-agent for implementation)."
 ---
 
@@ -180,46 +181,103 @@ sqlite3 .pm/tasks.db "INSERT INTO workflow_events (sprint, task_num, event_type,
 - Solution approach defined
 - Acceptance criteria are testable
 
-### Spec Template
+### Spec Template (Pyramid Principle)
+
+Every spec follows the pyramid principle: **answer first, details later.** A reader should be able to stop at any heading and have the most important information at that depth.
 
 ```markdown
 # [Feature Name]
 
-**Status**: Not Started | In Progress | Done
+> One sentence: what this spec defines and why it matters.
+
+| Field | Value |
+|-------|-------|
+| Status | Draft / Active / Implemented / Superseded |
+| Owner | [name] |
+| Last Updated | YYYY-MM-DD |
+| Depends On | [links to other specs] |
+| Enables | [links to other specs / roadmap goals] |
 
 ---
 
-## Scope
+## Table of Contents
 
-[Feature description in 1-2 sentences]
+- [Recent Changes](#recent-changes)
+- [Current State](#current-state)
+- [Vision](#vision)
+- [Design](#design)
+- [Schema](#schema)
+- [Implementation Plan](#implementation-plan)
+- [Open Questions](#open-questions)
+- [References](#references)
+
+---
+
+## Recent Changes
+
+Reverse-chronological. A returning reader scans this and knows whether to re-read anything below.
+
+| Date | What changed | Section |
+|------|-------------|---------|
+| YYYY-MM-DD | Added X based on Y | [Design > Sub-section](#sub-section) |
+| YYYY-MM-DD | Initial spec | All |
+
+---
+
+## Current State
+
+**What exists today.** 3-5 bullets. Ground the reader before the vision.
+
+- [what is done]
+- [what is partially done]
+- [what is not started]
+
+---
+
+## Vision
+
+**Where we are going.** 1-2 paragraphs max. The north star.
+
+---
+
+## Design
+
+The bulk of the spec. Each subsection opens with a **one-sentence answer** (what we decided), then reasoning, then details.
 
 **This spec covers**:
 - Component A
 - Component B
-- Behavior C
 
 **Out of scope**:
 - [Topic X] → `other-spec.md`
-- [Topic Y] → `another-spec.md`
 
 ---
 
-## What's Done
+## Schema
 
-| Item | Status |
-|------|--------|
-| Component A | ✅ |
-| Component B | ⏳ |
+SQL, TypeScript interfaces, or data model definitions. Separated from prose for easy reference.
+
+*(Optional — only if the spec defines data structures.)*
 
 ---
 
-## Suggested Tasks
+## Implementation Plan
 
 | # | Task | Done When |
 |---|------|-----------|
 | 1 | Create X | X exists and works |
 | 2 | Build Y | Y renders correctly |
-| 3 | Wire Z | Z integrated, tests pass |
+
+*(Optional — some specs are vision-only, not yet implementation-ready.)*
+
+---
+
+## Open Questions
+
+Numbered. Resolved questions are struck through with the answer inline (not deleted — the resolution is valuable context).
+
+1. ~~Should we use X or Y?~~ **Resolved**: X, because [reason].
+2. How do we handle Z?
 
 ---
 
@@ -228,6 +286,13 @@ sqlite3 .pm/tasks.db "INSERT INTO workflow_events (sprint, task_num, event_type,
 - Related spec: `related-spec.md`
 - Skill: `.claude/skills/{relevant-skill}`
 ```
+
+**Key template rules:**
+- **Recent Changes is the second section** — eliminates "re-read the whole spec" friction
+- **Current State before Vision** — "where are we" before "where are we going"
+- **One-line summary under the title** — forces clarity, makes directory scanning fast
+- **Struck-through open questions** — resolved questions keep their reasoning
+- **Not every section is required** — Schema and Implementation Plan are optional
 
 ### MECE Principle
 
