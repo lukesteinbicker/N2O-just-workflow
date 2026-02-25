@@ -1,5 +1,7 @@
 # N2O Observability System
 
+**Status**: Done
+
 ## What We Want
 
 Know whether our people and AI systems are producing good software. Know what's working, what's being reverted, what types of mistakes people make, and where our skills are failing. Use this data to train people and improve our tools.

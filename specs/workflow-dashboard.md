@@ -1,6 +1,6 @@
 # Workflow Dashboard
 
-**Status**: Spec
+**Status**: Not Started
 **Priority**: High
 **Estimated Effort**: 2-3 sprints
 **Author**: N2O Engineering
@@ -809,7 +809,7 @@ CREATE TABLE sync_state (
 ## Open Questions
 
 1. **Auth**: Use Supabase Auth, or just simple shared password for now?
-2. **Mobile**: Need mobile view, or desktop-only for v1?
+2. **Mobile**: Need mobile view, or desktop-only for v1? See also Goal 8 (Ubiquitous Access) in `specs/n2o-roadmap.md` — the dashboard is the natural foundation for mobile contribution surfaces.
 3. **Notifications**: Slack integration for task updates?
 4. **Permissions**: Role-based access, or everyone sees everything?
 

@@ -1,5 +1,7 @@
 # Coordination Goals Spec
 
+**Status**: Partial
+
 ## Overview
 
 N2O works for a single agent on a single machine. The goal: **multiple people, each running multiple agents, on the same project, without thinking about coordination.**
@@ -202,6 +204,8 @@ Zero friction. The system handles coordination so developers don't have to think
 ### H. Developer Digital Twin & Intelligent Routing
 
 Inspired by VICA's Student Model (a probabilistic model of what a student knows, how well, and what state they're in), the coordination system maintains a **Developer Digital Twin** — a model of each engineer's current context, capabilities, and state. This is what the routing algorithm reads from.
+
+**Relationship to parallel orchestrator**: The orchestrator (`specs/parallel-playbook.md`) implements session-level intelligent routing — it reads the task graph and decides which tasks to run where (Agent Teams, solo pipelines, competitive races). Goal H's Developer Digital Twin feeds into this: the twin's loaded context and trajectory signals inform the orchestrator's pattern assignment. The orchestrator is the execution engine; the twin is the developer model it reasons about. See also `specs/developer-twin.md` for the full twin design.
 
 #### What the Digital Twin Tracks
 
