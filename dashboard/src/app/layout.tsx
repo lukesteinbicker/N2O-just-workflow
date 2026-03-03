@@ -16,8 +16,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "N2O Observatory",
-  description: "N2O Workflow Framework Observatory",
+  title: "N2O Dashboard",
+  description: "N2O Workflow Framework Dashboard",
 };
 
 export default function RootLayout({

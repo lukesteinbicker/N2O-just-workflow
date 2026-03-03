@@ -212,6 +212,10 @@ for jsonl_file in "${JSONL_FILES[@]}"; do
     if jq -e '.' "$trimmed" >/dev/null 2>&1; then
       jq_input="$trimmed"
       log_warn "Truncated last line in $basename_file (recovered $(wc -l < "$trimmed" | tr -d ' ') of $(wc -l < "$jsonl_file" | tr -d ' ') lines)"
+    else
+      rm -f "$trimmed"
+      log_warn "Skipping unparseable file: $basename_file"
+      continue
     fi
     # trimmed gets cleaned up after the jq pass below
   fi
@@ -362,7 +366,7 @@ for jsonl_file in "${JSONL_FILES[@]}"; do
         }
       ]
     }
-  ' "$jq_input" 2>/dev/null)
+  ' "$jq_input" 2>/dev/null) || true
 
   # Clean up temp file if we created one
   [[ "$jq_input" != "$jsonl_file" ]] && rm -f "$jq_input"
@@ -519,7 +523,7 @@ for jsonl_file in "${JSONL_FILES[@]}"; do
       assistant_message_timestamps = '$sql_assistant_ts',
       background_task_count = $background_task_count, web_search_count = $web_search_count,
       synced_at = NULL, sync_attempts = 0, sync_error = NULL
-    WHERE file_path = '$sql_file_path';"
+    WHERE file_path = '$sql_file_path';" 2>/dev/null || { log_warn "Failed to update: $basename_file (skipping)"; continue; }
   else
     sqlite3 "$DB" "INSERT INTO transcripts (
       session_id, parent_session_id, agent_id, file_path, file_size_bytes,
@@ -547,7 +551,7 @@ for jsonl_file in "${JSONL_FILES[@]}"; do
       $avg_turn_ms_val, $tool_result_error_count, $compaction_count,
       $cwd_val, $git_branch_val, '$sql_assistant_ts',
       $background_task_count, $web_search_count
-    );"
+    );" 2>/dev/null || { log_warn "Failed to insert: $basename_file (skipping)"; continue; }
   fi
 
   # -------------------------------------------------------------------------

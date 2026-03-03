@@ -216,6 +216,89 @@ export const TEAM_QUERY = gql`
   }
 `;
 
+// ── Streams (Session Timeline Gantt) ─────────────────────
+
+export const STREAMS_QUERY = gql`
+  query Streams {
+    sessionTimeline {
+      sessionId
+      developer
+      sprint
+      taskNum
+      taskTitle
+      skillName
+      startedAt
+      endedAt
+      durationMinutes
+      totalInputTokens
+      totalOutputTokens
+      toolCallCount
+      messageCount
+      model
+      subagents {
+        sessionId
+        startedAt
+        endedAt
+        durationMinutes
+        totalInputTokens
+        totalOutputTokens
+        toolCallCount
+        model
+      }
+    }
+  }
+`;
+
+// ── Tasks Board (Task Gantt) ─────────────────────────────
+
+export const TASKS_BOARD_QUERY = gql`
+  query TasksBoard {
+    tasks {
+      sprint
+      taskNum
+      title
+      spec
+      status
+      blockedReason
+      type
+      owner {
+        name
+      }
+      complexity
+      startedAt
+      completedAt
+      estimatedMinutes
+      actualMinutes
+      blowUpRatio
+      dependencies {
+        sprint
+        taskNum
+      }
+      dependents {
+        sprint
+        taskNum
+      }
+    }
+  }
+`;
+
+// ── Activity Feed ────────────────────────────────────────
+
+export const ACTIVITY_FEED_QUERY = gql`
+  query ActivityFeed {
+    activityLog(limit: 200) {
+      id
+      timestamp
+      developer
+      action
+      sprint
+      taskNum
+      summary
+      metadata
+    }
+  }
+`;
+
 // ── Activity Insights ────────────────────────────────────
 
 export const ACTIVITY_INSIGHTS_QUERY = gql`

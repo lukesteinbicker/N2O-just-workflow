@@ -66,27 +66,24 @@ export const taskResolvers = {
     owner: async (task: any, _: any, ctx: Context) => {
       if (!task._owner) return null;
       const row = await ctx.loaders.developer.load(task._owner);
-      return mapDeveloper(row);
+      if (row) return mapDeveloper(row);
+      // Fallback for agent IDs like "agent-MacBook-Pro-86278-1771899422"
+      const raw: string = task._owner;
+      const match = raw.match(/agent-.*?-(\d+)-/);
+      const name = match ? `agent-${match[1]}` : raw;
+      return { name, fullName: raw, role: "agent" };
     },
 
     dependencies: async (task: any, _: any, ctx: Context) => {
-      const rows = await queryAll(
-        ctx.db,
-        `SELECT t.* FROM tasks t
-         JOIN task_dependencies d ON t.sprint = d.depends_on_sprint AND t.task_num = d.depends_on_task
-         WHERE d.sprint = ? AND d.task_num = ?`,
-        [task.sprint, task.taskNum]
+      const rows = await ctx.loaders.taskDependencies.load(
+        `${task.sprint}|${task.taskNum}`
       );
       return rows.map(mapTask);
     },
 
     dependents: async (task: any, _: any, ctx: Context) => {
-      const rows = await queryAll(
-        ctx.db,
-        `SELECT t.* FROM tasks t
-         JOIN task_dependencies d ON t.sprint = d.sprint AND t.task_num = d.task_num
-         WHERE d.depends_on_sprint = ? AND d.depends_on_task = ?`,
-        [task.sprint, task.taskNum]
+      const rows = await ctx.loaders.taskDependents.load(
+        `${task.sprint}|${task.taskNum}`
       );
       return rows.map(mapTask);
     },

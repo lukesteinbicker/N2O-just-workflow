@@ -2,13 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import {
-  Activity,
-  Eye,
-  Gauge,
-  Sparkles,
-  Users,
-} from "lucide-react";
+import { Activity, ListTodo, Radio } from "lucide-react";
 import {
   Tooltip,
   TooltipContent,
@@ -16,10 +10,8 @@ import {
 } from "@/components/ui/tooltip";
 
 const nav = [
-  { href: "/", icon: Eye, label: "Observatory" },
-  { href: "/velocity", icon: Gauge, label: "Velocity" },
-  { href: "/skills", icon: Sparkles, label: "Skills" },
-  { href: "/team", icon: Users, label: "Team" },
+  { href: "/streams", icon: Radio, label: "Streams" },
+  { href: "/tasks", icon: ListTodo, label: "Tasks" },
   { href: "/activity", icon: Activity, label: "Activity" },
 ] as const;
 
@@ -28,11 +20,9 @@ export function Sidebar() {
 
   return (
     <aside className="flex h-screen w-12 flex-col items-center border-r border-border bg-background py-3 gap-1">
-      <div className="mb-3 text-xs font-bold text-primary tracking-wider">
-        N2O
-      </div>
+      <div className="mb-3 h-4" />
       {nav.map(({ href, icon: Icon, label }) => {
-        const active = href === "/" ? pathname === "/" : pathname.startsWith(href);
+        const active = pathname.startsWith(href);
         return (
           <Tooltip key={href} delayDuration={0}>
             <TooltipTrigger asChild>

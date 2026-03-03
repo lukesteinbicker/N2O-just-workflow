@@ -1,5 +1,6 @@
-# Task database (binary, regenerated from schema)
+# Task database + seed files (runtime state lives in Supabase)
 .pm/tasks.db
+.pm/todo/**/tasks.sql
 
 # Working memory (transitory scratch files)
 .wm/
