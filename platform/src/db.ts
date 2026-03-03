@@ -22,27 +22,65 @@ function interpolate(sql: string, params: any[]): string {
   return sql.replace(/\$(\d+)/g, (_, idx) => escapeParam(params[parseInt(idx) - 1]));
 }
 
+const CACHE_TTL_MS = 30_000; // 30s — dashboard data doesn't need sub-second freshness
+
+interface CacheEntry {
+  rows: any[];
+  expiresAt: number;
+}
+
 export class SupabasePool {
+  private cache = new Map<string, CacheEntry>();
+
   async query(sql: string, params: any[] = []): Promise<{ rows: any[] }> {
     const finalSql = params.length > 0 ? interpolate(sql, params) : sql;
-    const res = await fetch(QUERY_URL, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${SUPABASE_ACCESS_TOKEN}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ query: finalSql }),
-    });
-    if (!res.ok) {
-      const body = await res.text();
-      throw new Error(`Supabase query failed (${res.status}): ${body}`);
+
+    // Check cache
+    const cached = this.cache.get(finalSql);
+    if (cached && cached.expiresAt > Date.now()) {
+      return { rows: cached.rows };
     }
-    const rows = await res.json();
-    return { rows: Array.isArray(rows) ? rows : [] };
+
+    const maxRetries = 3;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      const res = await fetch(QUERY_URL, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${SUPABASE_ACCESS_TOKEN}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ query: finalSql }),
+      });
+      if (res.status === 429 && attempt < maxRetries) {
+        const delay = 1000 * Math.pow(2, attempt); // 1s, 2s, 4s
+        await new Promise((r) => setTimeout(r, delay));
+        continue;
+      }
+      if (!res.ok) {
+        const body = await res.text();
+        throw new Error(`Supabase query failed (${res.status}): ${body}`);
+      }
+      const rows = await res.json();
+      const result = Array.isArray(rows) ? rows : [];
+
+      // Store in cache
+      this.cache.set(finalSql, { rows: result, expiresAt: Date.now() + CACHE_TTL_MS });
+
+      // Evict expired entries periodically (every 50 queries)
+      if (this.cache.size > 100) {
+        const now = Date.now();
+        for (const [key, entry] of this.cache) {
+          if (entry.expiresAt <= now) this.cache.delete(key);
+        }
+      }
+
+      return { rows: result };
+    }
+    throw new Error("Supabase query failed: max retries exceeded");
   }
 
   async end(): Promise<void> {
-    // No-op: HTTP connections are stateless
+    this.cache.clear();
   }
 }
 

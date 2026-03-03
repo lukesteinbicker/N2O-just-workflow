@@ -92,34 +92,38 @@ const standaloneResolvers = {
       args: { limit?: number; developer?: string },
       ctx: Context
     ) => {
-      const conditions: string[] = [];
       const params: any[] = [];
-
-      if (args.developer) {
-        conditions.push("developer = ?");
-        params.push(args.developer);
-      }
-
-      const where = conditions.length
-        ? `WHERE ${conditions.join(" AND ")}`
-        : "";
-      let sql = `SELECT * FROM activity_log ${where} ORDER BY timestamp DESC`;
+      let sql = `SELECT id, timestamp, event_type, sprint, task_num,
+        tool_name, skill_name, phase, agent_type, metadata, session_id
+        FROM workflow_events ORDER BY timestamp DESC`;
       if (args.limit) {
         sql += ` LIMIT ?`;
         params.push(args.limit);
       }
 
       const rows = await queryAll(ctx.db, sql, params);
-      return rows.map((row: any) => ({
-        id: row.id,
-        timestamp: row.timestamp,
-        developer: row.developer,
-        action: row.action,
-        sprint: row.sprint,
-        taskNum: row.task_num,
-        summary: row.summary,
-        metadata: row.metadata,
-      }));
+      return rows.map((row: any) => {
+        let summary = "";
+        if (row.event_type === "tool_call" && row.tool_name) {
+          summary = row.tool_name;
+        } else if (row.event_type === "skill_invoked" && row.skill_name) {
+          summary = row.skill_name;
+        } else if (row.event_type === "subagent_spawn" && row.agent_type) {
+          summary = `Spawned ${row.agent_type} agent`;
+        } else if (row.event_type === "phase_entered" && row.phase) {
+          summary = row.phase;
+        }
+        return {
+          id: row.id,
+          timestamp: row.timestamp,
+          developer: null,
+          action: row.event_type,
+          sprint: row.sprint,
+          taskNum: row.task_num,
+          summary,
+          metadata: row.metadata,
+        };
+      });
     },
   },
 };

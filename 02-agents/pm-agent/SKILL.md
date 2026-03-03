@@ -85,7 +85,7 @@ To set up: `claude mcp add --transport sse linear-server https://mcp.linear.app/
 │   ├── crm/
 │   │   ├── 01-deals-pipeline.md
 │   │   ├── ...
-│   │   └── tasks.sql     # Task seed for this sprint (in git)
+│   │   └── tasks.sql     # Task seed for this sprint (gitignored, local only)
 │   └── domain-events/
 │       └── tasks.sql
 └── case-studies/         # User research
@@ -93,7 +93,7 @@ To set up: `claude mcp add --transport sse linear-server https://mcp.linear.app/
 .wm/                      # Working memory (transitory, gitignored)
 ```
 
-**Key design**: `tasks.sql` seeds live with their specs (diffable, in git). `tasks.db` is gitignored — no merge conflicts.
+**Key design**: `tasks.sql` seeds are gitignored (local only). `tasks.db` is also gitignored — no merge conflicts. Supabase is the remote source of truth for task state; specs (.md) in git serve as the durable planning rationale.
 
 ---
 
@@ -479,6 +479,8 @@ sqlite3 .pm/tasks.db "INSERT INTO workflow_events (sprint, task_num, event_type,
 3. Initialize local db from schema + seed(s)
 
 **Task granularity**: One session. Each task should be completable in a single focused work session.
+
+**Source of truth**: Specs (.md) stay in git as planning rationale. `tasks.sql` is local-only (gitignored) -- used to seed your local `tasks.db`. Task state syncs to Supabase so other developers see progress without exchanging SQL files.
 
 ### Initialize Local Database
 
@@ -1105,7 +1107,7 @@ sqlite3 .pm/tasks.db "UPDATE tasks SET status = 'done' WHERE sprint = 'crm-found
 |------|------|
 | Ideas | `.pm/backlog/**/*.md` |
 | Sprint specs | `.pm/todo/{sprint}/*.md` |
-| Task seeds | `.pm/todo/{sprint}/tasks.sql` (in git, diffable) |
+| Task seeds | `.pm/todo/{sprint}/tasks.sql` (gitignored -- local seed script) |
 | Local task db | `.pm/tasks.db` (gitignored) |
 | Schema | `.pm/schema.sql` |
 | Working memory | `.wm/**/*.md` |
