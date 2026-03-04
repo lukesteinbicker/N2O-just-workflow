@@ -36,11 +36,11 @@ requiring no extra work from agents or engineers.
 
 This enables velocity queries without any manual tracking:
 ```sql
--- Average hours per task this sprint
+-- Average minutes per task this sprint
 SELECT * FROM sprint_velocity WHERE sprint = 'auth-sprint';
 
 -- Individual task times
-SELECT task_num, title, hours_to_complete FROM velocity_report;
+SELECT task_num, title, minutes_to_complete FROM velocity_report;
 ```
 
 ### Git Traceability

@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     verified_at DATETIME,               -- Set when user marks task as verified (manual or via `n2o verify`)
 
     -- Estimation and complexity (set by PM during task breakdown)
-    estimated_hours REAL,               -- PM's estimate at planning time
+    estimated_minutes REAL,             -- PM's estimate in minutes at planning time
     complexity TEXT,                     -- low, medium, high, unknown
     complexity_notes TEXT,              -- Why (e.g., 'unstable API', 'heavy integration')
     reversions INTEGER DEFAULT 0,       -- Times status went backward (green→red, green→blocked)
@@ -181,7 +181,7 @@ SELECT
     title,
     started_at,
     completed_at,
-    ROUND((julianday(completed_at) - julianday(started_at)) * 24, 1) as hours_to_complete
+    ROUND((julianday(completed_at) - julianday(started_at)) * 1440, 1) as minutes_to_complete
 FROM tasks
 WHERE started_at IS NOT NULL
   AND completed_at IS NOT NULL
@@ -192,21 +192,21 @@ CREATE VIEW IF NOT EXISTS sprint_velocity AS
 SELECT
     sprint,
     COUNT(*) as completed_tasks,
-    ROUND(AVG((julianday(completed_at) - julianday(started_at)) * 24), 1) as avg_hours_per_task,
-    ROUND(SUM((julianday(completed_at) - julianday(started_at)) * 24), 1) as total_hours
+    ROUND(AVG((julianday(completed_at) - julianday(started_at)) * 1440), 1) as avg_minutes_per_task,
+    ROUND(SUM((julianday(completed_at) - julianday(started_at)) * 1440), 1) as total_minutes
 FROM tasks
 WHERE started_at IS NOT NULL
   AND completed_at IS NOT NULL
 GROUP BY sprint;
 
--- Developer velocity: average hours per task, by person
+-- Developer velocity: average minutes per task, by person
 CREATE VIEW IF NOT EXISTS developer_velocity AS
 SELECT
     owner,
     COUNT(*) as completed_tasks,
-    ROUND(AVG((julianday(completed_at) - julianday(started_at)) * 24), 1) as avg_hours,
-    ROUND(MIN((julianday(completed_at) - julianday(started_at)) * 24), 1) as fastest,
-    ROUND(MAX((julianday(completed_at) - julianday(started_at)) * 24), 1) as slowest
+    ROUND(AVG((julianday(completed_at) - julianday(started_at)) * 1440), 1) as avg_minutes,
+    ROUND(MIN((julianday(completed_at) - julianday(started_at)) * 1440), 1) as fastest,
+    ROUND(MAX((julianday(completed_at) - julianday(started_at)) * 1440), 1) as slowest
 FROM tasks
 WHERE started_at IS NOT NULL
   AND completed_at IS NOT NULL
@@ -218,19 +218,19 @@ CREATE VIEW IF NOT EXISTS estimation_accuracy AS
 SELECT
     owner,
     COUNT(*) as tasks_with_estimates,
-    ROUND(AVG(estimated_hours), 1) as avg_estimated,
-    ROUND(AVG((julianday(completed_at) - julianday(started_at)) * 24), 1) as avg_actual,
+    ROUND(AVG(estimated_minutes), 1) as avg_estimated,
+    ROUND(AVG((julianday(completed_at) - julianday(started_at)) * 1440), 1) as avg_actual,
     ROUND(
-        AVG((julianday(completed_at) - julianday(started_at)) * 24) /
-        NULLIF(AVG(estimated_hours), 0),
+        AVG((julianday(completed_at) - julianday(started_at)) * 1440) /
+        NULLIF(AVG(estimated_minutes), 0),
     2) as blow_up_ratio,  -- >1 means tasks take longer than estimated
     ROUND(AVG(ABS(
-        (julianday(completed_at) - julianday(started_at)) * 24 - estimated_hours
-    )), 1) as avg_error_hours
+        (julianday(completed_at) - julianday(started_at)) * 1440 - estimated_minutes
+    )), 1) as avg_error_minutes
 FROM tasks
 WHERE started_at IS NOT NULL
   AND completed_at IS NOT NULL
-  AND estimated_hours IS NOT NULL
+  AND estimated_minutes IS NOT NULL
   AND owner IS NOT NULL
 GROUP BY owner;
 
@@ -239,16 +239,16 @@ CREATE VIEW IF NOT EXISTS estimation_accuracy_by_type AS
 SELECT
     type,
     COUNT(*) as tasks,
-    ROUND(AVG(estimated_hours), 1) as avg_estimated,
-    ROUND(AVG((julianday(completed_at) - julianday(started_at)) * 24), 1) as avg_actual,
+    ROUND(AVG(estimated_minutes), 1) as avg_estimated,
+    ROUND(AVG((julianday(completed_at) - julianday(started_at)) * 1440), 1) as avg_actual,
     ROUND(
-        AVG((julianday(completed_at) - julianday(started_at)) * 24) /
-        NULLIF(AVG(estimated_hours), 0),
+        AVG((julianday(completed_at) - julianday(started_at)) * 1440) /
+        NULLIF(AVG(estimated_minutes), 0),
     2) as blow_up_ratio
 FROM tasks
 WHERE started_at IS NOT NULL
   AND completed_at IS NOT NULL
-  AND estimated_hours IS NOT NULL
+  AND estimated_minutes IS NOT NULL
 GROUP BY type;
 
 -- Estimation accuracy by complexity: do "high" complexity tasks blow up more?
@@ -256,16 +256,16 @@ CREATE VIEW IF NOT EXISTS estimation_accuracy_by_complexity AS
 SELECT
     complexity,
     COUNT(*) as tasks,
-    ROUND(AVG(estimated_hours), 1) as avg_estimated,
-    ROUND(AVG((julianday(completed_at) - julianday(started_at)) * 24), 1) as avg_actual,
+    ROUND(AVG(estimated_minutes), 1) as avg_estimated,
+    ROUND(AVG((julianday(completed_at) - julianday(started_at)) * 1440), 1) as avg_actual,
     ROUND(
-        AVG((julianday(completed_at) - julianday(started_at)) * 24) /
-        NULLIF(AVG(estimated_hours), 0),
+        AVG((julianday(completed_at) - julianday(started_at)) * 1440) /
+        NULLIF(AVG(estimated_minutes), 0),
     2) as blow_up_ratio
 FROM tasks
 WHERE started_at IS NOT NULL
   AND completed_at IS NOT NULL
-  AND estimated_hours IS NOT NULL
+  AND estimated_minutes IS NOT NULL
   AND complexity IS NOT NULL
 GROUP BY complexity;
 
@@ -355,18 +355,54 @@ CREATE TABLE IF NOT EXISTS transcripts (
     FOREIGN KEY (sprint, task_num) REFERENCES tasks(sprint, task_num)
 );
 
+-- Messages: full content of every conversation message (no truncation)
+CREATE TABLE IF NOT EXISTS messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,
+    message_index INTEGER NOT NULL,
+    role TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'system')),
+    content TEXT,
+    timestamp TEXT,
+    model TEXT,
+    input_tokens INTEGER,
+    output_tokens INTEGER,
+    stop_reason TEXT,
+    synced_at DATETIME,
+    UNIQUE (session_id, message_index)
+);
+
+-- Tool calls: full input params for every tool invocation
+CREATE TABLE IF NOT EXISTS tool_calls (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,
+    message_index INTEGER NOT NULL,
+    tool_index INTEGER NOT NULL,
+    tool_use_id TEXT,
+    tool_name TEXT NOT NULL,
+    input TEXT NOT NULL,  -- JSON string
+    output TEXT,
+    is_error INTEGER DEFAULT 0,
+    timestamp TEXT,
+    synced_at DATETIME,
+    UNIQUE (session_id, message_index, tool_index)
+);
+
+CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id);
+CREATE INDEX IF NOT EXISTS idx_tool_calls_session ON tool_calls(session_id);
+CREATE INDEX IF NOT EXISTS idx_tool_calls_name ON tool_calls(tool_name);
+
 -- Developer learning rate: estimation accuracy trend by sprint
 -- A blow-up ratio approaching 1.0 means improving estimation skills
 CREATE VIEW IF NOT EXISTS developer_learning_rate AS
 SELECT owner, sprint,
     COUNT(*) as tasks,
     ROUND(AVG(
-        (julianday(completed_at) - julianday(started_at)) * 24 /
-        NULLIF(estimated_hours, 0)
+        (julianday(completed_at) - julianday(started_at)) * 1440 /
+        NULLIF(estimated_minutes, 0)
     ), 2) as avg_blow_up_ratio
 FROM tasks
 WHERE started_at IS NOT NULL AND completed_at IS NOT NULL
-    AND estimated_hours IS NOT NULL AND owner IS NOT NULL
+    AND estimated_minutes IS NOT NULL AND owner IS NOT NULL
 GROUP BY owner, sprint;
 
 -- Common audit findings: which developers have the most audit problems, and what kinds
@@ -504,16 +540,16 @@ SELECT
     title,
     type,
     complexity,
-    estimated_hours,
-    ROUND((julianday(completed_at) - julianday(started_at)) * 24, 1) as actual_hours,
-    ROUND((julianday(completed_at) - julianday(started_at)) * 24 / NULLIF(estimated_hours, 0), 1) as blow_up_ratio,
+    estimated_minutes,
+    ROUND((julianday(completed_at) - julianday(started_at)) * 1440, 1) as actual_minutes,
+    ROUND((julianday(completed_at) - julianday(started_at)) * 1440 / NULLIF(estimated_minutes, 0), 1) as blow_up_ratio,
     reversions,
     testing_posture
 FROM tasks
 WHERE started_at IS NOT NULL
     AND completed_at IS NOT NULL
-    AND estimated_hours IS NOT NULL
-    AND (julianday(completed_at) - julianday(started_at)) * 24 > estimated_hours * 2;
+    AND estimated_minutes IS NOT NULL
+    AND (julianday(completed_at) - julianday(started_at)) * 1440 > estimated_minutes * 2;
 
 -- Task trajectory: Phase sequence and audit reversions per task
 CREATE VIEW IF NOT EXISTS task_trajectory AS

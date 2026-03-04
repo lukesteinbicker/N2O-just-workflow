@@ -21,5 +21,7 @@
 
   "pm_tool": null,
 
-  "team": []
+  "team": [],
+
+  "claim_tasks": false
 }

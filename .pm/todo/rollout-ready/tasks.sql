@@ -4,31 +4,31 @@
 -- 6 tasks: 5 parallel code/doc fixes + 1 final onboarding doc
 -- =============================================================================
 
-INSERT OR IGNORE INTO tasks (sprint, spec, task_num, title, type, skills, estimated_hours, complexity, complexity_notes, done_when, description) VALUES
+INSERT OR IGNORE INTO tasks (sprint, spec, task_num, title, type, skills, estimated_minutes, complexity, complexity_notes, done_when, description) VALUES
 ('rollout-ready', '01-rollout-fixes.md', 1,
  'Fix n2o stats path resolution',
  'infra', 'infra',
- 0.5, 'low', 'Single line change + test update',
+ 30, 'low', 'Single line change + test update',
  'Running `n2o stats` from a target project (not the framework repo) shows that project''s task data. Existing stats tests still pass. New test confirms project-path detection.',
  'cmd_stats() at n2o:1824 uses $N2O_DIR/.pm/tasks.db which always resolves to the framework directory. When Ella runs `n2o stats` in her project, she sees the framework''s data.
 
 Fix: Add project path detection at the top of cmd_stats(). Check if CWD (or parent dirs) has .pm/tasks.db — if so, use that. Fall back to $N2O_DIR only if no project DB found. Update test-n2o-stats.sh to verify project-local DB is used.');
 
-INSERT OR IGNORE INTO tasks (sprint, spec, task_num, title, type, skills, estimated_hours, complexity, complexity_notes, done_when, description) VALUES
+INSERT OR IGNORE INTO tasks (sprint, spec, task_num, title, type, skills, estimated_minutes, complexity, complexity_notes, done_when, description) VALUES
 ('rollout-ready', '01-rollout-fixes.md', 2,
  'Fix started_at on task claim',
  'infra', 'infra',
- 0.5, 'low', 'Single column addition to UPDATE statement',
+ 30, 'low', 'Single column addition to UPDATE statement',
  'claim-task.sh UPDATE includes started_at = datetime(''now''). test-n2o-claim.sh has a test verifying started_at is populated after claim.',
  'scripts/coordination/claim-task.sh lines 189-198: the atomic claim UPDATE sets owner, status, and session_id but never sets started_at. This breaks the Efficiency metric (avg minutes per task = completed_at - started_at).
 
 Fix: Add started_at = datetime(''now'') to the UPDATE statement at line 192. Add a test in test-n2o-claim.sh that claims a task and verifies started_at IS NOT NULL.');
 
-INSERT OR IGNORE INTO tasks (sprint, spec, task_num, title, type, skills, estimated_hours, complexity, complexity_notes, done_when, description) VALUES
+INSERT OR IGNORE INTO tasks (sprint, spec, task_num, title, type, skills, estimated_minutes, complexity, complexity_notes, done_when, description) VALUES
 ('rollout-ready', '01-rollout-fixes.md', 3,
  'Harden n2o check + add .worktrees/ to gitignore',
  'infra', 'infra',
- 1.0, 'low', 'Straightforward additions to existing check function and init',
+ 60, 'low', 'Straightforward additions to existing check function and init',
  'n2o check validates all 6 skills (not just 3), verifies session hooks in settings.json, confirms rates.json exists, and checks transcripts + workflow_events tables. n2o init adds .worktrees/ to .gitignore entries. Tests updated.',
  'Two fixes in the n2o CLI:
 
@@ -41,11 +41,11 @@ INSERT OR IGNORE INTO tasks (sprint, spec, task_num, title, type, skills, estima
 
 Update test-n2o-e2e.sh to verify the new checks pass on a healthy project.');
 
-INSERT OR IGNORE INTO tasks (sprint, spec, task_num, title, type, skills, estimated_hours, complexity, complexity_notes, done_when, description) VALUES
+INSERT OR IGNORE INTO tasks (sprint, spec, task_num, title, type, skills, estimated_minutes, complexity, complexity_notes, done_when, description) VALUES
 ('rollout-ready', '01-rollout-fixes.md', 4,
  'Fix session hook: background sync + claim opt-out',
  'infra', 'infra',
- 1.5, 'medium', 'Restructuring async flow in bash requires care with background processes and exit handling',
+ 90, 'medium', 'Restructuring async flow in bash requires care with background processes and exit handling',
  'Session hook completes critical path (identity + task context) in <2s. Auto-sync + git pull run in background. Setting claim_tasks: false in .pm/config.json skips auto-claim. Tests verify both modes.',
  'scripts/n2o-session-hook.sh currently runs auto-sync (n2o sync --quiet) and git pull synchronously before claiming a task. This can exceed the 5-second Claude Code hook timeout.
 
@@ -62,11 +62,11 @@ Add test in test-n2o-auto-sync.sh or test-n2o-e2e.sh:
 - Verify session hook with claim_tasks=false does NOT produce "Claimed task" output
 - Verify session hook with claim_tasks=true (default) still claims');
 
-INSERT OR IGNORE INTO tasks (sprint, spec, task_num, title, type, skills, estimated_hours, complexity, complexity_notes, done_when, description) VALUES
+INSERT OR IGNORE INTO tasks (sprint, spec, task_num, title, type, skills, estimated_minutes, complexity, complexity_notes, done_when, description) VALUES
 ('rollout-ready', '01-rollout-fixes.md', 5,
  'Update setup.md + team-quickstart.md',
  'docs', 'docs',
- 1.0, 'low', 'Rewriting existing docs, not creating from scratch',
+ 60, 'low', 'Rewriting existing docs, not creating from scratch',
  'setup.md references n2o init (not manual mkdir/sqlite3). team-quickstart.md mentions n2o setup for auto-sync. No references to .wm/ or manual DB creation remain in setup.md.',
  'Two doc updates:
 
@@ -82,11 +82,11 @@ INSERT OR IGNORE INTO tasks (sprint, spec, task_num, title, type, skills, estima
    - Explain that n2o setup enables auto-sync (framework updates on session start)
    - Keep it brief — 3-5 lines added');
 
-INSERT OR IGNORE INTO tasks (sprint, spec, task_num, title, type, skills, estimated_hours, complexity, complexity_notes, done_when, description) VALUES
+INSERT OR IGNORE INTO tasks (sprint, spec, task_num, title, type, skills, estimated_minutes, complexity, complexity_notes, done_when, description) VALUES
 ('rollout-ready', '01-rollout-fixes.md', 6,
  'Write ONBOARDING.md end-to-end walkthrough',
  'docs', 'docs',
- 2.0, 'medium', 'Requires walking through the actual flow and documenting friction points',
+ 120, 'medium', 'Requires walking through the actual flow and documenting friction points',
  'ONBOARDING.md exists at 01-getting-started/ONBOARDING.md. Covers: prerequisites, clone framework, n2o setup, n2o init <project>, n2o check, open Claude Code, first session, n2o stats. Includes 5+ "what do I do when" scenarios. Under 150 lines.',
  'Write the missing end-to-end onboarding walkthrough that rollout-goals.md identified as a pre-rollout blocker.
 

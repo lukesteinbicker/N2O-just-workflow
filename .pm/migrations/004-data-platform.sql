@@ -122,10 +122,10 @@ SELECT
     t.sprint,
     t.task_num,
     ROUND((julianday(t.completed_at) - julianday(t.started_at)) * 24 * 60) as actual_minutes,
-    t.estimated_hours * 60 as estimated_minutes,
+    t.estimated_minutes,
     ROUND(
-        (julianday(t.completed_at) - julianday(t.started_at)) * 24 * 60 /
-        NULLIF(t.estimated_hours * 60, 0), 2
+        (julianday(t.completed_at) - julianday(t.started_at)) * 1440 /
+        NULLIF(t.estimated_minutes, 0), 2
     ) as blow_up_ratio,
     dc.concurrent_sessions,
     dc.alertness,
@@ -147,7 +147,7 @@ SELECT
     COUNT(t.task_num) as total_tasks,
     SUM(CASE WHEN t.status = 'green' THEN 1 ELSE 0 END) as completed,
     ROUND(100.0 * SUM(CASE WHEN t.status = 'green' THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0), 1) as percent_complete,
-    SUM(CASE WHEN t.status != 'green' THEN COALESCE(t.estimated_hours * 60, 0) ELSE 0 END) as remaining_minutes,
+    SUM(CASE WHEN t.status != 'green' THEN COALESCE(t.estimated_minutes, 0) ELSE 0 END) as remaining_minutes,
     ROUND((julianday(s.deadline) - julianday('now')) * 24 * 60) as minutes_until_deadline
 FROM sprints s
 LEFT JOIN tasks t ON t.sprint = s.name

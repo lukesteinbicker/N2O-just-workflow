@@ -9,11 +9,11 @@
 -- Get N agents working in parallel on one machine with isolation + merging.
 -- =============================================================================
 
-INSERT INTO tasks (sprint, spec, task_num, title, type, skills, estimated_hours, complexity, complexity_notes, done_when, description) VALUES
+INSERT INTO tasks (sprint, spec, task_num, title, type, skills, estimated_minutes, complexity, complexity_notes, done_when, description) VALUES
 ('coordination', 'coordination.md', 1,
  'Git worktree lifecycle scripts',
  'infra', 'infra',
- 4.0, 'medium', 'Git worktree API is well-documented but edge cases around cleanup and .pm/tasks.db sharing need care',
+ 240, 'medium', 'Git worktree API is well-documented but edge cases around cleanup and .pm/tasks.db sharing need care',
  'Scripts exist: create-worktree (given task ID, creates worktree + branch), cleanup-worktree (removes worktree + branch after merge). Manual test: create 3 worktrees, verify independent working directories, verify shared .git database, cleanup all 3.',
  'Create scripts for git worktree management that the coordination system uses to isolate each agent.
 
@@ -34,11 +34,11 @@ Edge cases: handle worktree already exists (re-claim after crash), handle branch
 
 Reference: specs/active/coordination.md Goal C (Isolation), Q3 (git worktrees).');
 
-INSERT INTO tasks (sprint, spec, task_num, title, type, skills, estimated_hours, complexity, complexity_notes, done_when, description) VALUES
+INSERT INTO tasks (sprint, spec, task_num, title, type, skills, estimated_minutes, complexity, complexity_notes, done_when, description) VALUES
 ('coordination', 'coordination.md', 2,
  'Session hook: auto-register agent and claim task',
  'infra', 'infra',
- 3.0, 'medium', 'Claude Code hook system is documented but integration with worktrees and SQLite claiming is novel',
+ 180, 'medium', 'Claude Code hook system is documented but integration with worktrees and SQLite claiming is novel',
  'Enhanced session hook exists. On SessionStart: agent registers in local state, queries available_tasks with basic scoring (skill match), claims best task via atomic SQLite UPDATE, creates worktree for claimed task, prints task context. Manual test: start Claude Code session in N2O project, verify auto-claim fires.',
  'Enhance scripts/n2o-session-hook.sh (or create new hook script) to handle agent lifecycle on session start.
 
@@ -55,11 +55,11 @@ Initial routing: simple priority ordering from available_tasks. Intelligent rout
 
 Reference: specs/active/coordination.md Goal G (Developer Experience), Q7 (Agent initiation).');
 
-INSERT INTO tasks (sprint, spec, task_num, title, type, skills, estimated_hours, complexity, complexity_notes, done_when, description) VALUES
+INSERT INTO tasks (sprint, spec, task_num, title, type, skills, estimated_minutes, complexity, complexity_notes, done_when, description) VALUES
 ('coordination', 'coordination.md', 3,
  'Local merge queue with sequential merging',
  'infra', 'infra',
- 4.0, 'high', 'Background process management in bash, dependency-aware merge gating, error handling for failed merges',
+ 240, 'high', 'Background process management in bash, dependency-aware merge gating, error handling for failed merges',
  'Merge queue script exists. Accepts completed task branches, merges them sequentially into base branch. Clean merges auto-complete. Conflicting merges are flagged with file list + conflict details. Dependency gating: tasks do not become available until predecessor merge lands. Manual test: complete 3 tasks in parallel worktrees, verify sequential merge, verify dependent task unblocks only after merge.',
  'Create scripts/coordination/merge-queue.sh — a background process that manages merging completed agent work.
 
@@ -79,11 +79,11 @@ Does NOT include AI conflict resolution yet — that comes in Phase 4.
 
 Reference: specs/active/coordination.md Goal D (Conflict Resolution), Q5 (Merge strategy).');
 
-INSERT INTO tasks (sprint, spec, task_num, title, type, skills, estimated_hours, complexity, complexity_notes, done_when, description) VALUES
+INSERT INTO tasks (sprint, spec, task_num, title, type, skills, estimated_minutes, complexity, complexity_notes, done_when, description) VALUES
 ('coordination', 'coordination.md', 4,
  'File structure linter for parallel safety',
  'infra', 'infra',
- 2.0, 'low', 'Straightforward file analysis script',
+ 120, 'low', 'Straightforward file analysis script',
  'Linter script exists. Reports files over N lines (configurable, default 200). Integrated into lint-skills.sh or standalone. Running on the codebase produces a report of files that should be decomposed for parallel safety.',
  'Create scripts/lint-file-size.sh — a linter that flags files too large for safe parallel editing.
 
@@ -103,11 +103,11 @@ Reference: specs/active/coordination.md Goal C2 (File Structure for Parallelism)
 -- Add shared coordination store for multi-machine visibility.
 -- =============================================================================
 
-INSERT INTO tasks (sprint, spec, task_num, title, type, skills, estimated_hours, complexity, complexity_notes, done_when, description) VALUES
+INSERT INTO tasks (sprint, spec, task_num, title, type, skills, estimated_minutes, complexity, complexity_notes, done_when, description) VALUES
 ('coordination', 'coordination.md', 5,
  'Supabase schema + client setup',
  'database', 'database, infra',
- 4.0, 'high', 'First Supabase integration in the framework. Schema design, auth setup, client library choice, real-time subscription wiring.',
+ 240, 'high', 'First Supabase integration in the framework. Schema design, auth setup, client library choice, real-time subscription wiring.',
  'Supabase project exists with tables: tasks (mirror of local), agents (registry), activity_log (events). Client script (bash or node) can read/write to Supabase. Connection config in .pm/config.json. Manual test: insert a task locally, sync to Supabase, verify it appears.',
  'Set up Supabase as the shared coordination store (Layer 2).
 
@@ -128,11 +128,11 @@ Client:
 
 Reference: specs/active/coordination.md Q2 (coordination state), Q4 (two-layer architecture).');
 
-INSERT INTO tasks (sprint, spec, task_num, title, type, skills, estimated_hours, complexity, complexity_notes, done_when, description) VALUES
+INSERT INTO tasks (sprint, spec, task_num, title, type, skills, estimated_minutes, complexity, complexity_notes, done_when, description) VALUES
 ('coordination', 'coordination.md', 6,
  'Optimistic claiming with Supabase verification',
  'infra', 'infra, database',
- 3.0, 'medium', 'Async verification pattern is straightforward but handling rejection (stop current task, claim next) needs careful design',
+ 180, 'medium', 'Async verification pattern is straightforward but handling rejection (stop current task, claim next) needs careful design',
  'Claiming flow works end-to-end: agent claims locally (instant), starts working, Supabase verifies in background. If Supabase rejects (another machine claimed first), agent abandons and claims next task. Manual test: simulate two machines claiming same task, verify one gets rejected and falls back.',
  'Implement the optimistic claiming pattern from specs/active/coordination.md Q4.
 
@@ -151,11 +151,11 @@ The rejection handler needs to:
 
 Reference: specs/active/coordination.md Goal B (Task Coordination), Q4 (cross-machine claiming).');
 
-INSERT INTO tasks (sprint, spec, task_num, title, type, skills, estimated_hours, complexity, complexity_notes, done_when, description) VALUES
+INSERT INTO tasks (sprint, spec, task_num, title, type, skills, estimated_minutes, complexity, complexity_notes, done_when, description) VALUES
 ('coordination', 'coordination.md', 7,
  'Event-driven sync triggers + git hooks',
  'infra', 'infra',
- 3.0, 'medium', 'Git hooks are well-understood but ensuring they fire correctly with worktrees and don''t block agent execution needs testing',
+ 180, 'medium', 'Git hooks are well-understood but ensuring they fire correctly with worktrees and don''t block agent execution needs testing',
  'Sync fires automatically on: task claimed, task blocked, task completed, merge landed, agent start/stop. Git hooks installed: post-commit, post-merge, pre-push, post-checkout. All sync is background + non-blocking. Manual n2o sync command works. Manual test: claim a task, verify Supabase updates within 5 seconds. Commit in a worktree, verify post-commit hook fires sync.',
  'Wire up automatic sync from local SQLite to Supabase at key transitions.
 
@@ -182,11 +182,11 @@ Reference: specs/active/coordination.md Goal E (Sync & Visibility), Q6 (sync tri
 -- Context-aware task assignment based on developer model.
 -- =============================================================================
 
-INSERT INTO tasks (sprint, spec, task_num, title, type, skills, estimated_hours, complexity, complexity_notes, done_when, description) VALUES
+INSERT INTO tasks (sprint, spec, task_num, title, type, skills, estimated_minutes, complexity, complexity_notes, done_when, description) VALUES
 ('coordination', 'coordination.md', 8,
  'Developer Digital Twin data model + population',
  'database', 'database, infra',
- 4.0, 'high', 'Novel data model. Defining loaded context, path history, trajectory, and availability in a queryable format requires careful schema design.',
+ 240, 'high', 'Novel data model. Defining loaded context, path history, trajectory, and availability in a queryable format requires careful schema design.',
  'Schema additions exist for twin data: developer_sessions (session tracking), developer_paths (task sequence history), developer_file_sets (files touched per session). Population hooks fire on session start, task claim, file edit, task completion. Manual test: work on 3 tasks in a session, query twin and verify loaded context shows correct files/modules, path shows task sequence, availability shows session duration.',
  'Design and implement the Developer Digital Twin data store. Twin data lives in BOTH local SQLite (for local routing computation) and Supabase (for cross-machine visibility). The routing algorithm reads from both — local for own twin, Supabase for other developers'' twins.
 
@@ -210,12 +210,12 @@ Static data: developers table already has skill ratings. Add columns: expected_h
 
 Reference: specs/active/coordination.md Goal H (Developer Digital Twin).');
 
-INSERT INTO tasks (sprint, spec, task_num, title, type, skills, estimated_hours, complexity, complexity_notes, done_when, description) VALUES
+INSERT INTO tasks (sprint, spec, task_num, title, type, skills, estimated_minutes, complexity, complexity_notes, done_when, description) VALUES
 ('coordination', 'coordination.md', 9,
  'Routing scoring algorithm',
  'agent', 'infra',
- 4.0, 'high', 'Core intelligence of the coordination system. Scoring function with multiple weighted signals. Getting the weights right requires iteration.',
- 'Routing function exists and is called during task claiming. Scores available tasks by: context match (files/modules overlap with loaded context), trajectory match (task is next in developer''s feature chain), skill match (task type vs developer skill ratings), availability fit (estimated_hours vs remaining session time), overlap avoidance (negative score for files in another developer''s active working set). Manual test: set up 2 developers with different contexts, verify routing assigns tasks that match each developer''s context.',
+ 240, 'high', 'Core intelligence of the coordination system. Scoring function with multiple weighted signals. Getting the weights right requires iteration.',
+ 'Routing function exists and is called during task claiming. Scores available tasks by: context match (files/modules overlap with loaded context), trajectory match (task is next in developer''s feature chain), skill match (task type vs developer skill ratings), availability fit (estimated_minutes vs remaining session time), overlap avoidance (negative score for files in another developer''s active working set). Manual test: set up 2 developers with different contexts, verify routing assigns tasks that match each developer''s context.',
  'Implement the routing scoring algorithm that replaces simple priority ordering in task claiming.
 
 Architecture: LOCAL computation, CENTRALIZED data. The scoring function runs locally on the agent''s machine. It reads twin data from both local SQLite (own twin) and Supabase (other developers'' twins). There is no centralized routing service.
@@ -232,7 +232,7 @@ Scoring weights (initial, tunable):
 - context_match: 0.35 — proportion of task''s expected files that overlap with developer''s loaded context
 - trajectory_match: 0.25 — is this task next in the developer''s current feature/dependency chain?
 - skill_match: 0.15 — developer''s skill rating for this task''s type (normalized 0-1)
-- availability_fit: 0.10 — does estimated_hours fit within remaining session time?
+- availability_fit: 0.10 — does estimated_minutes fit within remaining session time?
 - overlap_avoidance: 0.10 — negative score if task''s files overlap with another active developer''s working set (from Supabase)
 - dependency_unlock: 0.05 — does completing this task unblock other high-value tasks?
 
@@ -246,11 +246,11 @@ Graceful degradation: if Supabase is unreachable, skip overlap_avoidance and cro
 
 Reference: specs/active/coordination.md Goal H (Routing requirements), Q8 (Routing implementation).');
 
-INSERT INTO tasks (sprint, spec, task_num, title, type, skills, estimated_hours, complexity, complexity_notes, done_when, description) VALUES
+INSERT INTO tasks (sprint, spec, task_num, title, type, skills, estimated_minutes, complexity, complexity_notes, done_when, description) VALUES
 ('coordination', 'coordination.md', 10,
  'File working set tracking + overlap avoidance',
  'infra', 'infra, database',
- 3.0, 'medium', 'Tracking files per agent is straightforward via git diff. Making it queryable for routing requires wiring into the scoring function.',
+ 180, 'medium', 'Tracking files per agent is straightforward via git diff. Making it queryable for routing requires wiring into the scoring function.',
  'Each agent''s working set (files touched) is tracked in developer_file_sets and synced to Supabase. The routing algorithm queries active working sets across all developers and applies negative scoring for overlap. Manual test: two developers working on different areas, verify routing steers new tasks away from overlapping files.',
  'Track which files each agent is working on and use this for overlap avoidance in routing.
 
@@ -275,11 +275,11 @@ Reference: specs/active/coordination.md Goal C2 (File Structure), Goal H (Workin
 -- Enhance merge queue with AI conflict resolution and coordination observability.
 -- =============================================================================
 
-INSERT INTO tasks (sprint, spec, task_num, title, type, skills, estimated_hours, complexity, complexity_notes, done_when, description) VALUES
+INSERT INTO tasks (sprint, spec, task_num, title, type, skills, estimated_minutes, complexity, complexity_notes, done_when, description) VALUES
 ('coordination', 'coordination.md', 11,
  'AI merge conflict resolution',
  'agent', 'infra',
- 4.0, 'high', 'Using an LLM to resolve git merge conflicts is novel. Need to handle: conflict extraction, context building, resolution generation, validation.',
+ 240, 'high', 'Using an LLM to resolve git merge conflicts is novel. Need to handle: conflict extraction, context building, resolution generation, validation.',
  'Merge queue enhanced with AI resolution step. When git merge produces conflicts: extracts conflict markers, sends to Claude with context (both branches'' intent, file history), applies resolution, validates with syntax check. Auto-resolves common cases (import additions, separate functions, non-overlapping regions). Tags AI-resolved merges in activity_log. Manual test: create deliberate conflict (both agents add imports to same file), verify AI resolves correctly.',
  'Add AI conflict resolution to the merge queue (task 3).
 
@@ -300,11 +300,11 @@ Target: >95% of merges clean or AI-resolved. <5% escalated to human.
 
 Reference: specs/active/coordination.md Goal D (Conflict Resolution), Q5 (Merge strategy).');
 
-INSERT INTO tasks (sprint, spec, task_num, title, type, skills, estimated_hours, complexity, complexity_notes, done_when, description) VALUES
+INSERT INTO tasks (sprint, spec, task_num, title, type, skills, estimated_minutes, complexity, complexity_notes, done_when, description) VALUES
 ('coordination', 'coordination.md', 12,
  'Conflict notification + escalation system',
  'infra', 'infra',
- 2.0, 'low', 'Straightforward notification mechanism — write files, optionally send to Supabase for visibility',
+ 120, 'low', 'Straightforward notification mechanism — write files, optionally send to Supabase for visibility',
  'When AI cannot resolve a merge conflict, developer is notified with: which files conflict, what each agent was doing, conflict type, suggested resolution. Conflict report written to .pm/conflicts/. Conflict visible in Supabase activity_log. Developer can resolve and mark as done. Manual test: create unresolvable conflict, verify notification appears with clear context.',
  'Build the escalation path for merge conflicts that AI cannot resolve.
 
@@ -328,11 +328,11 @@ Resolution flow:
 
 Reference: specs/active/coordination.md Goal D (Conflict Resolution).');
 
-INSERT INTO tasks (sprint, spec, task_num, title, type, skills, estimated_hours, complexity, complexity_notes, done_when, description) VALUES
+INSERT INTO tasks (sprint, spec, task_num, title, type, skills, estimated_minutes, complexity, complexity_notes, done_when, description) VALUES
 ('coordination', 'coordination.md', 13,
  'Coordination monitoring + observability',
  'infra', 'infra, database',
- 3.0, 'medium', 'Mostly new views on existing tables + the new coordination tables',
+ 180, 'medium', 'Mostly new views on existing tables + the new coordination tables',
  'Dashboard views exist for coordination health: merge queue times, duplicate claim rate, AI merge resolution rate, human escalation rate, revert rate per concurrent agent count, coordination overhead (% of total agent time spent on coordination). n2o stats enhanced to show coordination metrics. Manual test: run 5 agents through a sprint, verify stats show accurate coordination metrics.',
  'Add observability for the coordination system itself — are we meeting the success criteria from specs/active/coordination.md?
 
