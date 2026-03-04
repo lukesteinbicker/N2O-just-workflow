@@ -39,17 +39,10 @@ function getData(res: any) {
   return result.data;
 }
 
-/**
- * Seed data for health monitoring tests.
- * Each core table gets at least one row so we can verify counts and timestamps.
- */
 function seedHealthData(db: Database.Database) {
-  // Developer (needed as FK for developer_context)
   db.prepare(
     `INSERT INTO developers (name, full_name, role) VALUES ('alice', 'Alice Smith', 'fullstack')`
   ).run();
-
-  // Projects + Sprint (needed as FK for tasks)
   db.prepare(
     `INSERT INTO projects (id, name, status) VALUES ('proj-1', 'Test Project', 'active')`
   ).run();
@@ -67,18 +60,18 @@ function seedHealthData(db: Database.Database) {
      VALUES ('sprint-1', 2, 'Task two', 'red', 'frontend', '2026-03-03T08:00:00')`
   ).run();
 
-  // Transcripts (3 rows)
+  // Transcripts (3 rows, with ended_at for session tracking)
   db.prepare(
-    `INSERT INTO transcripts (session_id, file_path, started_at)
-     VALUES ('sess-1', '/tmp/sess1.jsonl', '2026-03-02T12:00:00')`
+    `INSERT INTO transcripts (session_id, file_path, started_at, ended_at)
+     VALUES ('sess-1', '/tmp/sess1.jsonl', '2026-03-02T12:00:00', '2026-03-02T13:00:00')`
   ).run();
   db.prepare(
-    `INSERT INTO transcripts (session_id, file_path, started_at)
-     VALUES ('sess-2', '/tmp/sess2.jsonl', '2026-03-03T09:00:00')`
+    `INSERT INTO transcripts (session_id, file_path, started_at, ended_at)
+     VALUES ('sess-2', '/tmp/sess2.jsonl', '2026-03-03T09:00:00', '2026-03-03T10:30:00')`
   ).run();
   db.prepare(
-    `INSERT INTO transcripts (session_id, file_path, started_at)
-     VALUES ('sess-3', '/tmp/sess3.jsonl', '2026-03-03T10:00:00')`
+    `INSERT INTO transcripts (session_id, file_path, started_at, ended_at)
+     VALUES ('sess-3', '/tmp/sess3.jsonl', '2026-03-03T10:00:00', '2026-03-03T11:00:00')`
   ).run();
 
   // Workflow events (5 rows)
@@ -123,30 +116,25 @@ function seedHealthData(db: Database.Database) {
 // ── Data Health Query ─────────────────────────────────────
 
 describe("dataHealth query", () => {
-  it("returns health data for all 5 core streams", async () => {
+  it("returns streams array and lastSessionEndedAt", async () => {
     const res = await executeQuery(`
       query { dataHealth {
-        stream count lastUpdated recentCount
+        lastSessionEndedAt
+        streams { stream count lastUpdated recentCount }
       }}
     `);
     const data = getData(res);
-    expect(data.dataHealth).toHaveLength(5);
-
-    const streams = data.dataHealth.map((s: any) => s.stream);
-    expect(streams).toContain("transcripts");
-    expect(streams).toContain("workflow_events");
-    expect(streams).toContain("tasks");
-    expect(streams).toContain("developer_context");
-    expect(streams).toContain("skill_versions");
+    expect(data.dataHealth.streams).toHaveLength(5);
+    expect(data.dataHealth.lastSessionEndedAt).toBe("2026-03-03T11:00:00");
   });
 
   it("returns correct count for each stream", async () => {
     const res = await executeQuery(`
-      query { dataHealth { stream count } }
+      query { dataHealth { streams { stream count } } }
     `);
     const data = getData(res);
     const byStream = Object.fromEntries(
-      data.dataHealth.map((s: any) => [s.stream, s])
+      data.dataHealth.streams.map((s: any) => [s.stream, s])
     );
 
     expect(byStream.transcripts.count).toBe(3);
@@ -158,11 +146,11 @@ describe("dataHealth query", () => {
 
   it("returns lastUpdated as the most recent timestamp per stream", async () => {
     const res = await executeQuery(`
-      query { dataHealth { stream lastUpdated } }
+      query { dataHealth { streams { stream lastUpdated } } }
     `);
     const data = getData(res);
     const byStream = Object.fromEntries(
-      data.dataHealth.map((s: any) => [s.stream, s])
+      data.dataHealth.streams.map((s: any) => [s.stream, s])
     );
 
     expect(byStream.transcripts.lastUpdated).toBe("2026-03-03T10:00:00");
@@ -173,14 +161,12 @@ describe("dataHealth query", () => {
   });
 
   it("returns zero recentCount for seed data with past timestamps", async () => {
-    // All seed data has fixed timestamps in the past (2026-03-01 to 2026-03-03),
-    // so none fall within the 1-hour recency window relative to "now"
     const res = await executeQuery(`
-      query { dataHealth { stream recentCount } }
+      query { dataHealth { streams { stream recentCount } } }
     `);
     const data = getData(res);
     const byStream = Object.fromEntries(
-      data.dataHealth.map((s: any) => [s.stream, s])
+      data.dataHealth.streams.map((s: any) => [s.stream, s])
     );
 
     expect(byStream.transcripts.recentCount).toBe(0);
@@ -196,15 +182,16 @@ describe("dataHealth query", () => {
 
     const emptyServer = new ApolloServer<Context>({ typeDefs, resolvers });
     const res = await emptyServer.executeOperation(
-      { query: `query { dataHealth { stream count lastUpdated } }` },
+      { query: `query { dataHealth { lastSessionEndedAt streams { stream count lastUpdated } } }` },
       { contextValue: { db: emptyPool, loaders: createLoaders(emptyPool) } }
     );
 
     const data = getData(res);
-    const byStream = Object.fromEntries(
-      data.dataHealth.map((s: any) => [s.stream, s])
-    );
+    expect(data.dataHealth.lastSessionEndedAt).toBeNull();
 
+    const byStream = Object.fromEntries(
+      data.dataHealth.streams.map((s: any) => [s.stream, s])
+    );
     expect(byStream.transcripts.count).toBe(0);
     expect(byStream.transcripts.lastUpdated).toBeNull();
     expect(byStream.workflow_events.count).toBe(0);

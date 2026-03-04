@@ -46,7 +46,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     verified_at TIMESTAMPTZ,
 
     -- Estimation and complexity
-    estimated_hours REAL,
+    estimated_minutes REAL,
     complexity TEXT,
     complexity_notes TEXT,
     reversions INTEGER DEFAULT 0,
@@ -61,6 +61,8 @@ CREATE TABLE IF NOT EXISTS tasks (
     -- Git tracking
     commit_hash TEXT,
     merged_at TIMESTAMPTZ,
+    lines_added INTEGER,
+    lines_removed INTEGER,
 
     -- External PM tool sync
     external_id TEXT,
@@ -143,7 +145,7 @@ CREATE TABLE IF NOT EXISTS transcripts (
     session_id TEXT NOT NULL,
     parent_session_id TEXT,
     agent_id TEXT,
-    file_path TEXT NOT NULL,
+    file_path TEXT,
     file_size_bytes INTEGER,
     message_count INTEGER,
     user_message_count INTEGER,
@@ -156,7 +158,72 @@ CREATE TABLE IF NOT EXISTS transcripts (
     ended_at TIMESTAMPTZ,
     sprint TEXT,
     task_num INTEGER,
+
+    -- Cost tracking (migration 005)
+    estimated_cost_usd REAL,
+    cache_read_tokens INTEGER DEFAULT 0,
+    cache_creation_tokens INTEGER DEFAULT 0,
+    user_message_timestamps TEXT,
+    total_user_content_length INTEGER DEFAULT 0,
+
+    -- Comprehensive JSONL extraction (migration 006)
+    stop_reason_counts TEXT,
+    thinking_message_count INTEGER DEFAULT 0,
+    thinking_total_length INTEGER DEFAULT 0,
+    service_tier TEXT,
+    has_sidechain BOOLEAN DEFAULT false,
+    system_error_count INTEGER DEFAULT 0,
+    system_retry_count INTEGER DEFAULT 0,
+    avg_turn_duration_ms INTEGER,
+    tool_result_error_count INTEGER DEFAULT 0,
+    compaction_count INTEGER DEFAULT 0,
+
+    -- Session context (migration 007)
+    cwd TEXT,
+    git_branch TEXT,
+    assistant_message_timestamps TEXT,
+    background_task_count INTEGER DEFAULT 0,
+    web_search_count INTEGER DEFAULT 0,
+
+    -- Sync tracking (migrations 008-009)
+    developer TEXT,
+    machine_id TEXT,
+    synced_at TIMESTAMPTZ,
+    sync_attempts INTEGER DEFAULT 0,
+    sync_error TEXT,
+
     FOREIGN KEY (sprint, task_num) REFERENCES tasks(sprint, task_num)
+);
+
+-- Messages: full content of every conversation message (no truncation)
+CREATE TABLE IF NOT EXISTS messages (
+    id SERIAL PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    message_index INTEGER NOT NULL,
+    role TEXT NOT NULL,
+    content TEXT,
+    timestamp TIMESTAMPTZ,
+    model TEXT,
+    input_tokens INTEGER,
+    output_tokens INTEGER,
+    stop_reason TEXT,
+    UNIQUE (session_id, message_index),
+    CHECK (role IN ('user', 'assistant', 'system'))
+);
+
+-- Tool calls: full input params for every tool invocation
+CREATE TABLE IF NOT EXISTS tool_calls (
+    id SERIAL PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    message_index INTEGER NOT NULL,
+    tool_index INTEGER NOT NULL,
+    tool_use_id TEXT,
+    tool_name TEXT NOT NULL,
+    input JSONB NOT NULL,
+    output TEXT,
+    is_error BOOLEAN DEFAULT false,
+    timestamp TIMESTAMPTZ,
+    UNIQUE (session_id, message_index, tool_index)
 );
 
 -- Skill versions
@@ -301,6 +368,11 @@ CREATE INDEX IF NOT EXISTS idx_activity_dev ON activity_log(developer, timestamp
 CREATE INDEX IF NOT EXISTS idx_agents_developer ON agents(developer);
 CREATE INDEX IF NOT EXISTS idx_agents_status ON agents(status);
 CREATE INDEX IF NOT EXISTS idx_agents_heartbeat ON agents(last_heartbeat);
+CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id);
+CREATE INDEX IF NOT EXISTS idx_messages_role ON messages(session_id, role);
+CREATE INDEX IF NOT EXISTS idx_tool_calls_session ON tool_calls(session_id);
+CREATE INDEX IF NOT EXISTS idx_tool_calls_name ON tool_calls(tool_name);
+CREATE INDEX IF NOT EXISTS idx_tool_calls_name_session ON tool_calls(session_id, tool_name);
 
 -- =============================================================================
 -- VIEWS
@@ -374,7 +446,7 @@ SELECT
     title,
     started_at,
     completed_at,
-    ROUND(EXTRACT(EPOCH FROM (completed_at - started_at)) / 3600.0, 1) as hours_to_complete
+    ROUND(EXTRACT(EPOCH FROM (completed_at - started_at)) / 60.0, 1) as minutes_to_complete
 FROM tasks
 WHERE started_at IS NOT NULL
   AND completed_at IS NOT NULL
@@ -385,8 +457,8 @@ CREATE OR REPLACE VIEW sprint_velocity AS
 SELECT
     sprint,
     COUNT(*) as completed_tasks,
-    ROUND(AVG(EXTRACT(EPOCH FROM (completed_at - started_at)) / 3600.0)::numeric, 1) as avg_hours_per_task,
-    ROUND(SUM(EXTRACT(EPOCH FROM (completed_at - started_at)) / 3600.0)::numeric, 1) as total_hours
+    ROUND(AVG(EXTRACT(EPOCH FROM (completed_at - started_at)) / 60.0)::numeric, 1) as avg_minutes_per_task,
+    ROUND(SUM(EXTRACT(EPOCH FROM (completed_at - started_at)) / 60.0)::numeric, 1) as total_minutes
 FROM tasks
 WHERE started_at IS NOT NULL
   AND completed_at IS NOT NULL
@@ -397,9 +469,9 @@ CREATE OR REPLACE VIEW developer_velocity AS
 SELECT
     owner,
     COUNT(*) as completed_tasks,
-    ROUND(AVG(EXTRACT(EPOCH FROM (completed_at - started_at)) / 3600.0)::numeric, 1) as avg_hours,
-    ROUND(MIN(EXTRACT(EPOCH FROM (completed_at - started_at)) / 3600.0)::numeric, 1) as fastest,
-    ROUND(MAX(EXTRACT(EPOCH FROM (completed_at - started_at)) / 3600.0)::numeric, 1) as slowest
+    ROUND(AVG(EXTRACT(EPOCH FROM (completed_at - started_at)) / 60.0)::numeric, 1) as avg_minutes,
+    ROUND(MIN(EXTRACT(EPOCH FROM (completed_at - started_at)) / 60.0)::numeric, 1) as fastest,
+    ROUND(MAX(EXTRACT(EPOCH FROM (completed_at - started_at)) / 60.0)::numeric, 1) as slowest
 FROM tasks
 WHERE started_at IS NOT NULL
   AND completed_at IS NOT NULL
@@ -411,19 +483,19 @@ CREATE OR REPLACE VIEW estimation_accuracy AS
 SELECT
     owner,
     COUNT(*) as tasks_with_estimates,
-    ROUND(AVG(estimated_hours)::numeric, 1) as avg_estimated,
-    ROUND(AVG(EXTRACT(EPOCH FROM (completed_at - started_at)) / 3600.0)::numeric, 1) as avg_actual,
+    ROUND(AVG(estimated_minutes)::numeric, 1) as avg_estimated,
+    ROUND(AVG(EXTRACT(EPOCH FROM (completed_at - started_at)) / 60.0)::numeric, 1) as avg_actual,
     ROUND(
-        (AVG(EXTRACT(EPOCH FROM (completed_at - started_at)) / 3600.0) /
-        NULLIF(AVG(estimated_hours), 0))::numeric,
+        (AVG(EXTRACT(EPOCH FROM (completed_at - started_at)) / 60.0) /
+        NULLIF(AVG(estimated_minutes), 0))::numeric,
     2) as blow_up_ratio,
     ROUND(AVG(ABS(
-        EXTRACT(EPOCH FROM (completed_at - started_at)) / 3600.0 - estimated_hours
-    ))::numeric, 1) as avg_error_hours
+        EXTRACT(EPOCH FROM (completed_at - started_at)) / 60.0 - estimated_minutes
+    ))::numeric, 1) as avg_error_minutes
 FROM tasks
 WHERE started_at IS NOT NULL
   AND completed_at IS NOT NULL
-  AND estimated_hours IS NOT NULL
+  AND estimated_minutes IS NOT NULL
   AND owner IS NOT NULL
 GROUP BY owner;
 
@@ -432,16 +504,16 @@ CREATE OR REPLACE VIEW estimation_accuracy_by_type AS
 SELECT
     type,
     COUNT(*) as tasks,
-    ROUND(AVG(estimated_hours)::numeric, 1) as avg_estimated,
-    ROUND(AVG(EXTRACT(EPOCH FROM (completed_at - started_at)) / 3600.0)::numeric, 1) as avg_actual,
+    ROUND(AVG(estimated_minutes)::numeric, 1) as avg_estimated,
+    ROUND(AVG(EXTRACT(EPOCH FROM (completed_at - started_at)) / 60.0)::numeric, 1) as avg_actual,
     ROUND(
-        (AVG(EXTRACT(EPOCH FROM (completed_at - started_at)) / 3600.0) /
-        NULLIF(AVG(estimated_hours), 0))::numeric,
+        (AVG(EXTRACT(EPOCH FROM (completed_at - started_at)) / 60.0) /
+        NULLIF(AVG(estimated_minutes), 0))::numeric,
     2) as blow_up_ratio
 FROM tasks
 WHERE started_at IS NOT NULL
   AND completed_at IS NOT NULL
-  AND estimated_hours IS NOT NULL
+  AND estimated_minutes IS NOT NULL
 GROUP BY type;
 
 -- Estimation accuracy by complexity
@@ -449,16 +521,16 @@ CREATE OR REPLACE VIEW estimation_accuracy_by_complexity AS
 SELECT
     complexity,
     COUNT(*) as tasks,
-    ROUND(AVG(estimated_hours)::numeric, 1) as avg_estimated,
-    ROUND(AVG(EXTRACT(EPOCH FROM (completed_at - started_at)) / 3600.0)::numeric, 1) as avg_actual,
+    ROUND(AVG(estimated_minutes)::numeric, 1) as avg_estimated,
+    ROUND(AVG(EXTRACT(EPOCH FROM (completed_at - started_at)) / 60.0)::numeric, 1) as avg_actual,
     ROUND(
-        (AVG(EXTRACT(EPOCH FROM (completed_at - started_at)) / 3600.0) /
-        NULLIF(AVG(estimated_hours), 0))::numeric,
+        (AVG(EXTRACT(EPOCH FROM (completed_at - started_at)) / 60.0) /
+        NULLIF(AVG(estimated_minutes), 0))::numeric,
     2) as blow_up_ratio
 FROM tasks
 WHERE started_at IS NOT NULL
   AND completed_at IS NOT NULL
-  AND estimated_hours IS NOT NULL
+  AND estimated_minutes IS NOT NULL
   AND complexity IS NOT NULL
 GROUP BY complexity;
 
@@ -481,12 +553,12 @@ CREATE OR REPLACE VIEW developer_learning_rate AS
 SELECT owner, sprint,
     COUNT(*) as tasks,
     ROUND(AVG(
-        EXTRACT(EPOCH FROM (completed_at - started_at)) / 3600.0 /
-        NULLIF(estimated_hours, 0)
+        EXTRACT(EPOCH FROM (completed_at - started_at)) / 60.0 /
+        NULLIF(estimated_minutes, 0)
     )::numeric, 2) as avg_blow_up_ratio
 FROM tasks
 WHERE started_at IS NOT NULL AND completed_at IS NOT NULL
-    AND estimated_hours IS NOT NULL AND owner IS NOT NULL
+    AND estimated_minutes IS NOT NULL AND owner IS NOT NULL
 GROUP BY owner, sprint;
 
 -- Common audit findings
@@ -618,16 +690,16 @@ SELECT
     title,
     type,
     complexity,
-    estimated_hours,
-    ROUND(EXTRACT(EPOCH FROM (completed_at - started_at)) / 3600.0, 1) as actual_hours,
-    ROUND((EXTRACT(EPOCH FROM (completed_at - started_at)) / 3600.0 / NULLIF(estimated_hours, 0))::numeric, 1) as blow_up_ratio,
+    estimated_minutes,
+    ROUND(EXTRACT(EPOCH FROM (completed_at - started_at)) / 60.0, 1) as actual_minutes,
+    ROUND((EXTRACT(EPOCH FROM (completed_at - started_at)) / 60.0 / NULLIF(estimated_minutes, 0))::numeric, 1) as blow_up_ratio,
     reversions,
     testing_posture
 FROM tasks
 WHERE started_at IS NOT NULL
     AND completed_at IS NOT NULL
-    AND estimated_hours IS NOT NULL
-    AND EXTRACT(EPOCH FROM (completed_at - started_at)) / 3600.0 > estimated_hours * 2;
+    AND estimated_minutes IS NOT NULL
+    AND EXTRACT(EPOCH FROM (completed_at - started_at)) / 60.0 > estimated_minutes * 2;
 
 -- Skill version token usage
 CREATE OR REPLACE VIEW skill_version_token_usage AS
@@ -699,10 +771,10 @@ SELECT
     t.sprint,
     t.task_num,
     ROUND(EXTRACT(EPOCH FROM (t.completed_at - t.started_at)) / 60.0) as actual_minutes,
-    t.estimated_hours * 60 as estimated_minutes,
+    t.estimated_minutes,
     ROUND(
         (EXTRACT(EPOCH FROM (t.completed_at - t.started_at)) / 60.0 /
-        NULLIF(t.estimated_hours * 60, 0))::numeric, 2
+        NULLIF(t.estimated_minutes, 0))::numeric, 2
     ) as blow_up_ratio,
     dc.concurrent_sessions,
     dc.alertness,
@@ -723,7 +795,7 @@ SELECT
     COUNT(t.task_num) as total_tasks,
     SUM(CASE WHEN t.status = 'green' THEN 1 ELSE 0 END) as completed,
     ROUND((100.0 * SUM(CASE WHEN t.status = 'green' THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0))::numeric, 1) as percent_complete,
-    SUM(CASE WHEN t.status != 'green' THEN COALESCE(t.estimated_hours * 60, 0) ELSE 0 END) as remaining_minutes,
+    SUM(CASE WHEN t.status != 'green' THEN COALESCE(t.estimated_minutes, 0) ELSE 0 END) as remaining_minutes,
     ROUND(EXTRACT(EPOCH FROM (s.deadline - NOW())) / 60.0) as minutes_until_deadline
 FROM sprints s
 LEFT JOIN tasks t ON t.sprint = s.name
@@ -843,6 +915,8 @@ ALTER TABLE contributor_availability ENABLE ROW LEVEL SECURITY;
 ALTER TABLE task_dependencies ENABLE ROW LEVEL SECURITY;
 ALTER TABLE skill_versions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE _migrations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tool_calls ENABLE ROW LEVEL SECURITY;
 
 -- Service role has full access
 CREATE POLICY "Service role full access" ON tasks FOR ALL USING (true) WITH CHECK (true);
@@ -859,6 +933,8 @@ CREATE POLICY "Service role full access" ON contributor_availability FOR ALL USI
 CREATE POLICY "Service role full access" ON task_dependencies FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Service role full access" ON skill_versions FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Service role full access" ON _migrations FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Service role full access" ON messages FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Service role full access" ON tool_calls FOR ALL USING (true) WITH CHECK (true);
 
 -- =============================================================================
 -- REAL-TIME

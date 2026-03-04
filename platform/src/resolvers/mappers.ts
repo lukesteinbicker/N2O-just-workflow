@@ -14,9 +14,7 @@ export function mapTask(row: any) {
     blockedReason: row.blocked_reason,
     type: row.type,
     complexity: row.complexity ? parseFloat(row.complexity) || null : null,
-    estimatedMinutes: row.estimated_hours
-      ? row.estimated_hours * 60
-      : row.estimated_minutes ?? null,
+    estimatedMinutes: row.estimated_minutes ?? null,
     priority: row.priority,
     horizon: row.horizon,
     startedAt: row.started_at,

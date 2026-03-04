@@ -63,35 +63,35 @@ function seedAnalyticsData(db: Database.Database) {
   ).run();
 
   // Tasks — need completed tasks with estimates for velocity/estimation/blow-up views
-  // Task 1: alice, green, 2h est, actual 2.5h (1.25x) — normal
+  // Task 1: alice, green, 120min est, actual 150min (1.25x) — normal
   db.prepare(
-    `INSERT INTO tasks (sprint, task_num, title, status, type, complexity, owner, estimated_hours, priority, horizon,
+    `INSERT INTO tasks (sprint, task_num, title, status, type, complexity, owner, estimated_minutes, priority, horizon,
        started_at, completed_at, reversions, testing_posture, pattern_audited, pattern_audit_notes)
-     VALUES ('sprint-1', 1, 'Set up database', 'green', 'database', 'medium', 'alice', 2.0, 1.0, 'active',
+     VALUES ('sprint-1', 1, 'Set up database', 'green', 'database', 'medium', 'alice', 120, 1.0, 'active',
        '2026-02-01T09:00:00', '2026-02-01T11:30:00', 0, 'A', 1, 'No violations')`
   ).run();
 
-  // Task 2: alice, green, 1h est, actual 5h (5.0x) — blow-up!
+  // Task 2: alice, green, 60min est, actual 300min (5.0x) — blow-up!
   db.prepare(
-    `INSERT INTO tasks (sprint, task_num, title, status, type, complexity, owner, estimated_hours, priority, horizon,
+    `INSERT INTO tasks (sprint, task_num, title, status, type, complexity, owner, estimated_minutes, priority, horizon,
        started_at, completed_at, reversions, testing_posture, pattern_audited, pattern_audit_notes)
-     VALUES ('sprint-1', 2, 'Auth middleware', 'green', 'actions', 'high', 'alice', 1.0, 2.0, 'active',
+     VALUES ('sprint-1', 2, 'Auth middleware', 'green', 'actions', 'high', 'alice', 60, 2.0, 'active',
        '2026-02-01T12:00:00', '2026-02-01T17:00:00', 2, 'B', 1, 'Found fake test violation')`
   ).run();
 
-  // Task 3: alice, green in sprint-2, 3h est, actual 3.5h (1.17x) — improving
+  // Task 3: alice, green in sprint-2, 180min est, actual 210min (1.17x) — improving
   db.prepare(
-    `INSERT INTO tasks (sprint, task_num, title, status, type, complexity, owner, estimated_hours, priority, horizon,
+    `INSERT INTO tasks (sprint, task_num, title, status, type, complexity, owner, estimated_minutes, priority, horizon,
        started_at, completed_at, reversions, testing_posture, pattern_audited)
-     VALUES ('sprint-2', 1, 'Build API', 'green', 'actions', 'high', 'alice', 3.0, 1.0, 'active',
+     VALUES ('sprint-2', 1, 'Build API', 'green', 'actions', 'high', 'alice', 180, 1.0, 'active',
        '2026-02-15T09:00:00', '2026-02-15T12:30:00', 0, 'A', 1)`
   ).run();
 
   // Task 4: bob, green in sprint-1 (for multi-developer metrics)
   db.prepare(
-    `INSERT INTO tasks (sprint, task_num, title, status, type, complexity, owner, estimated_hours, priority, horizon,
+    `INSERT INTO tasks (sprint, task_num, title, status, type, complexity, owner, estimated_minutes, priority, horizon,
        started_at, completed_at, reversions, testing_posture, pattern_audited)
-     VALUES ('sprint-1', 3, 'Frontend components', 'green', 'frontend', 'low', 'bob', 2.0, 3.0, 'active',
+     VALUES ('sprint-1', 3, 'Frontend components', 'green', 'frontend', 'low', 'bob', 120, 3.0, 'active',
        '2026-02-01T09:00:00', '2026-02-01T11:00:00', 0, 'A', 1)`
   ).run();
 
@@ -451,7 +451,7 @@ describe("Quality analytics", () => {
 describe("Sprint analytics", () => {
   it("returns sprint velocity", async () => {
     const data = getData(
-      await executeQuery(`query { sprintVelocity { sprint completedTasks avgHoursPerTask totalHours } }`)
+      await executeQuery(`query { sprintVelocity { sprint completedTasks avgMinutesPerTask totalMinutes } }`)
     );
     expect(data.sprintVelocity.length).toBeGreaterThan(0);
     const sprint1 = data.sprintVelocity.find(
@@ -459,7 +459,7 @@ describe("Sprint analytics", () => {
     );
     expect(sprint1).toBeDefined();
     expect(sprint1.completedTasks).toBeGreaterThanOrEqual(3);
-    expect(sprint1.avgHoursPerTask).toBeGreaterThan(0);
+    expect(sprint1.avgMinutesPerTask).toBeGreaterThan(0);
   });
 
   it("filters sprint velocity by sprint name", async () => {

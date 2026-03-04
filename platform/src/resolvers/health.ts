@@ -20,29 +20,38 @@ export const healthResolvers = {
     dataHealth: async (_: any, __: any, ctx: Context) => {
       const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000)
         .toISOString()
-        .slice(0, 19); // "YYYY-MM-DDTHH:mm:ss" — works in both Postgres and SQLite
+        .slice(0, 19);
 
-      const results = await Promise.all(
-        STREAMS.map(async ({ stream, table, timestampCol }) => {
-          const rows = await queryAll(
-            ctx.db,
-            `SELECT
-              COUNT(*) AS count,
-              MAX(${timestampCol}) AS last_updated,
-              SUM(CASE WHEN ${timestampCol} >= ? THEN 1 ELSE 0 END) AS recent_count
-            FROM ${table}`,
-            [oneHourAgo]
-          );
-          const row = rows[0] || { count: 0, last_updated: null, recent_count: 0 };
-          return {
-            stream,
-            count: parseInt(row.count) || 0,
-            lastUpdated: row.last_updated || null,
-            recentCount: parseInt(row.recent_count) || 0,
-          };
-        })
-      );
-      return results;
+      const [streams, sessionRow] = await Promise.all([
+        Promise.all(
+          STREAMS.map(async ({ stream, table, timestampCol }) => {
+            const rows = await queryAll(
+              ctx.db,
+              `SELECT
+                COUNT(*) AS count,
+                MAX(${timestampCol}) AS last_updated,
+                SUM(CASE WHEN ${timestampCol} >= ? THEN 1 ELSE 0 END) AS recent_count
+              FROM ${table}`,
+              [oneHourAgo]
+            );
+            const row = rows[0] || { count: 0, last_updated: null, recent_count: 0 };
+            return {
+              stream,
+              count: parseInt(row.count) || 0,
+              lastUpdated: row.last_updated || null,
+              recentCount: parseInt(row.recent_count) || 0,
+            };
+          })
+        ),
+        queryAll(ctx.db, `SELECT MAX(ended_at) AS last_ended FROM transcripts`).then(
+          (rows) => rows[0] || { last_ended: null }
+        ),
+      ]);
+
+      return {
+        streams,
+        lastSessionEndedAt: sessionRow.last_ended || null,
+      };
     },
   },
 };

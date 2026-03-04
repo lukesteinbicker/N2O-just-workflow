@@ -60,14 +60,14 @@ describe("Task queries", () => {
     expect(data.task).toBeNull();
   });
 
-  it("converts estimated_hours to estimatedMinutes", async () => {
+  it("returns estimatedMinutes from estimated_minutes column", async () => {
     const res = await executeQuery(`
       query { task(sprint: "test-sprint", taskNum: 1) {
         estimatedMinutes
       }}
     `);
     const data = (res.body as any).singleResult.data;
-    // 2.0 hours → 120 minutes
+    // 120 minutes stored directly
     expect(data.task.estimatedMinutes).toBe(120);
   });
 

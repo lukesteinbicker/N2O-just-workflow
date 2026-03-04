@@ -120,7 +120,7 @@ export const developerResolvers = {
       if (!row || parseInt(row.total) === 0) {
         const basic = await queryOne(
           ctx.db,
-          `SELECT avg_hours, completed_tasks FROM developer_velocity WHERE owner = ?`,
+          `SELECT avg_minutes, completed_tasks FROM developer_velocity WHERE owner = ?`,
           [dev.name]
         );
 
@@ -128,7 +128,7 @@ export const developerResolvers = {
           return { avgMinutes: null, blowUpRatio: null, totalTasksCompleted: 0 };
         }
         return {
-          avgMinutes: basic.avg_hours ? parseFloat(basic.avg_hours) * 60 : null,
+          avgMinutes: basic.avg_minutes ? parseFloat(basic.avg_minutes) : null,
           blowUpRatio: null,
           totalTasksCompleted: parseInt(basic.completed_tasks) ?? 0,
         };
