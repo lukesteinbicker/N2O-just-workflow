@@ -7,6 +7,8 @@ import { projectResolvers } from "./project.js";
 import { developerResolvers } from "./developer.js";
 import { mutationResolvers } from "./mutations.js";
 import { analyticsResolvers } from "./analytics.js";
+import { conversationResolvers } from "./conversation.js";
+import { healthResolvers } from "./health.js";
 
 // Standalone query resolvers for events, transcripts, activity
 const standaloneResolvers = {
@@ -93,9 +95,24 @@ const standaloneResolvers = {
       ctx: Context
     ) => {
       const params: any[] = [];
-      let sql = `SELECT id, timestamp, event_type, sprint, task_num,
-        tool_name, skill_name, phase, agent_type, metadata, session_id
-        FROM workflow_events ORDER BY timestamp DESC`;
+      const conditions: string[] = [];
+
+      if (args.developer) {
+        conditions.push("t.owner = ?");
+        params.push(args.developer);
+      }
+
+      const where = conditions.length
+        ? `WHERE ${conditions.join(" AND ")}`
+        : "";
+
+      let sql = `SELECT we.id, we.timestamp, we.event_type, we.sprint, we.task_num,
+        we.tool_name, we.skill_name, we.phase, we.agent_type, we.metadata, we.session_id,
+        t.owner as developer, t.title as task_title
+        FROM workflow_events we
+        LEFT JOIN tasks t ON we.sprint = t.sprint AND we.task_num = t.task_num
+        ${where}
+        ORDER BY we.timestamp DESC`;
       if (args.limit) {
         sql += ` LIMIT ?`;
         params.push(args.limit);
@@ -104,8 +121,39 @@ const standaloneResolvers = {
       const rows = await queryAll(ctx.db, sql, params);
       return rows.map((row: any) => {
         let summary = "";
+        let meta: any = null;
+        if (row.metadata) {
+          try { meta = JSON.parse(row.metadata); } catch {}
+        }
+
         if (row.event_type === "tool_call" && row.tool_name) {
-          summary = row.tool_name;
+          if (meta?.file_path) {
+            const basename = meta.file_path.split("/").pop() || meta.file_path;
+            summary = `${row.tool_name}: ${basename}`;
+          } else if (meta?.command) {
+            summary = `Bash: ${meta.command.substring(0, 120)}`;
+          } else if (meta?.pattern) {
+            summary = `${row.tool_name}: ${meta.pattern}`;
+          } else if (meta?.description) {
+            summary = `Task: ${meta.description}`;
+          } else if (meta?.query) {
+            summary = `WebSearch: ${meta.query}`;
+          } else if (meta?.skill) {
+            summary = `Skill: ${meta.skill}`;
+          } else {
+            summary = row.tool_name;
+          }
+        } else if (row.event_type === "user_prompt") {
+          const text = meta?.prompt_text || "";
+          summary = text ? text.substring(0, 500) : "User prompt";
+        } else if (row.event_type === "subagent_start") {
+          const agentType = meta?.agent_type || row.agent_type || "";
+          summary = agentType ? `Started ${agentType} agent` : "Subagent started";
+        } else if (row.event_type === "subagent_stop") {
+          const agentType = meta?.agent_type || row.agent_type || "";
+          summary = agentType ? `${agentType} agent completed` : "Subagent stopped";
+        } else if (row.event_type === "turn_complete") {
+          summary = "Turn complete";
         } else if (row.event_type === "skill_invoked" && row.skill_name) {
           summary = row.skill_name;
         } else if (row.event_type === "subagent_spawn" && row.agent_type) {
@@ -113,15 +161,18 @@ const standaloneResolvers = {
         } else if (row.event_type === "phase_entered" && row.phase) {
           summary = row.phase;
         }
+
         return {
           id: row.id,
           timestamp: row.timestamp,
-          developer: null,
+          developer: row.developer || null,
           action: row.event_type,
           sprint: row.sprint,
           taskNum: row.task_num,
           summary,
-          metadata: row.metadata,
+          metadata: typeof row.metadata === "string" ? row.metadata : row.metadata != null ? JSON.stringify(row.metadata) : null,
+          sessionId: row.session_id,
+          taskTitle: row.task_title || null,
         };
       });
     },
@@ -137,6 +188,8 @@ export const resolvers = {
     ...developerResolvers.Query,
     ...standaloneResolvers.Query,
     ...analyticsResolvers.Query,
+    ...conversationResolvers.Query,
+    ...healthResolvers.Query,
   },
   Mutation: {
     ...mutationResolvers.Mutation,

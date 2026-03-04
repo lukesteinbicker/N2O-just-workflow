@@ -134,3 +134,21 @@ export function createTestContext(db: Database.Database): TestContext {
     loaders: createLoaders(db),
   };
 }
+
+/**
+ * Wraps a better-sqlite3 Database to match the SupabasePool interface.
+ * Resolvers call pool.query(sql, params) — this shim translates
+ * Postgres-style $1,$2 placeholders back to ? for SQLite.
+ */
+export function wrapDbAsPool(db: Database.Database): any {
+  return {
+    query(sql: string, params: any[] = []) {
+      const sqliteSql = sql.replace(/\$\d+/g, "?");
+      const rows = db.prepare(sqliteSql).all(...params);
+      return Promise.resolve({ rows });
+    },
+    end() {
+      return Promise.resolve();
+    },
+  };
+}

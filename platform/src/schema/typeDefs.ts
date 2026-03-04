@@ -19,6 +19,7 @@ export const typeDefs = `#graphql
 
     # Activity
     activityLog(limit: Int, developer: String): [Activity!]!
+    conversationFeed(limit: Int, developer: String): [SessionConversation!]!
 
     # Events
     events(sessionId: String, sprint: String, taskNum: Int, eventType: String, limit: Int): [Event!]!
@@ -58,6 +59,9 @@ export const typeDefs = `#graphql
 
     # Session timeline (for Gantt chart)
     sessionTimeline(developer: String, dateFrom: String, dateTo: String): [SessionTimelineEntry!]!
+
+    # Data health monitoring
+    dataHealth: [DataHealthStream!]!
   }
 
   type Mutation {
@@ -277,6 +281,34 @@ export const typeDefs = `#graphql
     taskNum: Int
     summary: String
     metadata: String
+    sessionId: String
+    taskTitle: String
+  }
+
+  # ── Conversation Types ────────────────────────────────────────
+
+  type ToolCallInfo {
+    name: String!
+    summary: String
+  }
+
+  type ConversationMessage {
+    role: String!
+    content: String
+    timestamp: String
+    toolCalls: [ToolCallInfo!]
+  }
+
+  type SessionConversation {
+    sessionId: String!
+    developer: String
+    sprint: String
+    taskNum: Int
+    taskTitle: String
+    startedAt: String
+    endedAt: String
+    model: String
+    messages: [ConversationMessage!]!
   }
 
   # ── Analytics Types ─────────────────────────────────────────
@@ -449,5 +481,12 @@ export const typeDefs = `#graphql
     messageCount: Int
     model: String
     subagents: [SessionTimelineEntry!]!
+  }
+
+  type DataHealthStream {
+    stream: String!
+    count: Int!
+    lastUpdated: String
+    recentCount: Int!
   }
 `;
