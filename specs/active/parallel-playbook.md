@@ -95,7 +95,7 @@ SELECT * FROM available_tasks;
 SELECT * FROM task_dependencies;
 
 -- All tasks (for dependency chain analysis)
-SELECT sprint, task_num, spec, type, status, estimated_hours, complexity
+SELECT sprint, task_num, spec, type, status, estimated_minutes, complexity
 FROM tasks WHERE sprint = '<current_sprint>';
 
 -- Specs with no tasks (need decomposition)
@@ -114,7 +114,7 @@ FROM tasks WHERE sprint = '<current_sprint>';
    - Task marked `race: true` → Pattern 3 (Racing)
    - Spec in `.pm/todo/` with no tasks → Pattern 5 (Spec-then-Implement)
 5. **Compute terminal layout** — how many agents, what each does
-6. **Estimate total time** — based on `estimated_hours` and critical path analysis
+6. **Estimate total time** — based on `estimated_minutes` and critical path analysis
 
 ### Output: The Execution Plan
 

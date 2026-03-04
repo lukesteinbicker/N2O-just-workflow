@@ -95,7 +95,7 @@ Per task:
 #### Quality Gates
 
 - Every task has a non-empty `done_when` field
-- Every task has `estimated_hours` and `complexity` set
+- Every task has `estimated_minutes` and `complexity` set
 - Task dependencies are recorded in `task_dependencies` table
 
 ---

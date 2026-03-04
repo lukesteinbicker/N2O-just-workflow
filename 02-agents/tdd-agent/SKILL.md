@@ -542,6 +542,33 @@ $(jq -r '.commands.build' .pm/config.json)  # Must succeed
 - Test-only changes
 - Blocked/pending tasks
 
+### Step 3: Code Health Scan (Non-Blocking)
+
+**After subagent audits complete**, run `/code-health` on changed files. This is **informational only** — findings do not block the workflow.
+
+```
+Scope: changed
+Files: ${filesChanged}
+```
+
+Invoke the code-health skill with `changed` scope, passing the list of files modified in this task. Code-health spawns 6 parallel subagents (file length, missing docs, function density, circular deps, dead exports, test coverage gaps).
+
+**What happens with findings**:
+- Findings appear in the final report under a "Code Health" section
+- `tech-debt` tasks are created for critical/warn findings (deduplicated)
+- Findings **never block** the TDD workflow — the task proceeds to Phase 6
+
+**Include in final report** (Phase 10):
+```
+## Code Health (changed files)
+
+| Check | Critical | Warn | Info |
+|-------|----------|------|------|
+| ...   | ...      | ...  | ...  |
+
+Tasks created: N new, M skipped (existing)
+```
+
 ### Why Audits Matter
 
 Manual checklists get skipped. Subagents ensure:

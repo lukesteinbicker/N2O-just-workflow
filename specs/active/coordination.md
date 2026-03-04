@@ -494,7 +494,7 @@ Scoring weights (initial, tunable):
 - context_match: 0.35 — overlap between task's expected files and developer's loaded context
 - trajectory_match: 0.25 — is this task next in the developer's feature/dependency chain?
 - skill_match: 0.15 — developer's skill rating for this task's type
-- availability_fit: 0.10 — does estimated_hours fit within remaining session time?
+- availability_fit: 0.10 — does estimated_minutes fit within remaining session time?
 - overlap_avoidance: 0.10 — negative score for files overlapping another active developer's working set
 - dependency_unlock: 0.05 — does completing this task unblock other high-value tasks?
 

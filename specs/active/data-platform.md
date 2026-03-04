@@ -4,9 +4,9 @@
 
 | Field | Value |
 |-------|-------|
-| Status | Draft |
+| Status | Active — Layer 1 shipped, Layer 3 scoping |
 | Owner | Wiley |
-| Last Updated | 2026-02-23 |
+| Last Updated | 2026-03-03 |
 | Depends On | `../done/observability.md`, `workflow-dashboard.md`, `coordination.md` |
 | Enables | Roadmap Goal 8 (Ubiquitous Access), dynamic dashboards, natural language project queries |
 
@@ -33,6 +33,7 @@
 
 | Date | What changed | Section |
 |------|-------------|---------|
+| 2026-03-03 | Major status update: Layer 1 is live (Apollo Server, 65+ GraphQL fields, 30+ views, 9 migrations). Rewrote Current State. Collapsed Phases 0-1 into "Complete." Phase 2 (Intelligence) is now active work. Replaced Databricks chat migration plan with `assistant-ui` (`@assistant-ui/react`) as the chat frontend — clean build on existing Next.js dashboard, no adapter swap needed. Resolved Open Question #13. Updated #2 (Supabase sync partially shipped). | [Current State](#current-state), [Implementation Plan](#implementation-plan), [Layer 3](#layer-3-intelligence-llm), [Open Questions](#open-questions) |
 | 2026-02-23 | Major model revision: UUID projects with flexible metadata, dynamic skill tree (not 6 fixed integers), numeric complexity, minutes not hours, developer context tracking (concurrent sessions, alertness, time-of-day), effectiveness as relative-to-mean multiplier, removed source from availability | [Schema](#schema), [Design](#design) |
 | 2026-02-23 | Layer 3 no longer depends on Layer 2 — can ship with ontology-only LLM queries, rules enhance later | [Implementation Plan](#implementation-plan), [Layer 3](#layer-3-intelligence-llm) |
 | 2026-02-23 | Added multi-signal reasoning requirements to Layer 2 (DLA analogy, N2O worked example), GraphQL→graph DB migration path in Layer 1, chat component backend migration note. Removed GPS references — designing rules engine independently, see `rules-engine.md` | [Layer 1](#layer-1-ontology-graphql-api), [Layer 2](#layer-2-rules-engine), [Open Questions](#open-questions) |
@@ -42,20 +43,42 @@
 
 ## Current State
 
-What exists:
-- **SQLite database** (`.pm/tasks.db`): 6 tables, 30+ views — tasks, developers, dependencies, workflow events, transcripts, skill versions
-- **JSONL transcripts**: full session recordings parsed by `scripts/collect-transcripts.sh`
-- **`n2o stats` CLI**: surfaces velocity, estimation accuracy, quality metrics
-- **Contributor availability**: tracked daily in external custom system (hours, calendars)
-- **Linear sync**: adapter pattern for external PM tool integration
+### Layer 1 (Ontology) — Live
 
-What does NOT exist:
-- No unified API layer — all access is direct SQLite or bash scripts
-- No semantic data model — relationships are implicit in SQL joins
-- No rules engine — capacity planning, assignment, risk detection are manual
-- No LLM data access — Claude cannot query project data programmatically
-- No `sprints` table (text labels only, no dates/deadlines)
-- No `projects` table (single-project assumption)
+The GraphQL API is operational. Apollo Server 5 (TypeScript) + better-sqlite3, running on port 4000.
+
+**Schema coverage:**
+- **65+ GraphQL fields** across Query and Mutation types
+- **30+ SQL views** for analytics (velocity, quality, estimation, skills, phases, concurrency, health)
+- **Entity resolvers** with nested relationships: Task, Sprint, Project, Developer
+- **Mutations** for availability, skills, context snapshots, and activity logging
+- **Conversation feed** resolver parsing JSONL transcripts with tool call summarization
+- **Session timeline** for Gantt-style developer activity views
+- **Data health** monitoring endpoint
+
+**Database:**
+- **11 tables**: tasks, developers, task_dependencies, workflow_events, transcripts, skill_versions, projects, sprints, developer_skills, developer_context, contributor_availability, activity_log, developer_twins_local
+- **9 migrations** applied (002 through 009): skill quality, versioning, data platform foundations, data completeness, comprehensive JSONL extraction, session context, transcript sync, sync resilience
+- **Supabase sync** for transcripts (migrations 008-009): `synced_at`, `sync_attempts`, `sync_error` columns
+
+**Dashboard (Next.js 16, port 3000):**
+- Observatory, Velocity, Skills, Team, Activity, Streams, Tasks pages
+- Activity feed with developer filtering, tool call badges, 10s polling
+- Session timeline Gantt charts
+
+**What's still on paper (Layer 1 gaps):**
+- ~~`estimated_hours` → `estimated_minutes` column migration~~ **Done** — column renamed, views updated
+- `complexity` TEXT → REAL numeric migration
+- Developer table: old `skill_*` integer columns not yet dropped (coexist with `developer_skills` table)
+- `baseline_competency` not yet on `developers` table (exists on `developer_twins_local`)
+
+### Layer 2 (Rules Engine) — Designed, not built
+
+Architecture spec in `rules-engine.md`. No implementation yet.
+
+### Layer 3 (Intelligence) — Not built, ready to scope
+
+The ontology is rich enough to answer real questions. This is the active work item — see [Implementation Plan](#implementation-plan).
 
 ---
 
@@ -217,35 +240,93 @@ Combined inference: Despite Luke's slightly higher skill rating, Sarah is the be
 
 The thinnest layer. **Depends on Layer 1 only. Enhanced by Layer 2 when available.**
 
-An LLM with tools that grow as layers ship:
+**Audience:** Admin-only tool for project leads. Not developer-facing.
+
+#### Chat Frontend: assistant-ui
+
+[assistant-ui](https://www.assistant-ui.com/) (`@assistant-ui/react`) — a composable React library for AI chat interfaces. Replaces the prior plan to migrate the Databricks chat component.
+
+**Why assistant-ui:**
+- Composable primitives (inspired by Radix UI) — not a monolithic chat widget
+- Built-in streaming, auto-scroll, markdown, code syntax highlighting
+- **Generative UI** — maps LLM tool calls to custom React components (e.g., render a chart when `generate_chart` is called, render a data table for `query_ontology` results)
+- **LocalRuntime** with `ChatModelAdapter` — connects to any custom backend via a simple adapter interface
+- Works with Next.js (already our dashboard framework)
+- MIT licensed, active development (YC-backed)
+
+**UX design (reference: Ramp's "Ask Ramp"):**
+- Trigger: button at bottom-left of sidebar with sparkle icon + "Ask N2O" label
+- Click opens a right-side chat panel (~350px wide), sidebar auto-collapses to icon-only to make room
+- Chat panel header: "New chat" dropdown, expand-to-fullscreen icon, close (X) icon
+- Greeting with contextual suggested questions (e.g., "How's the current sprint?", "Who has capacity?")
+- Input at bottom: "Ask a question" placeholder, attachment icon, send icon
+- Closing the panel restores the sidebar to its expanded state
+- Panel is accessible from any page — it's a layout-level component, not a route
+
+**Integration pattern:**
+```
+dashboard/src/components/ask-panel.tsx   ← Layout-level chat panel (not a page route)
+  └─ AssistantRuntimeProvider             ← assistant-ui runtime wrapper
+       └─ Thread                          ← Chat thread component
+            ├─ ThreadMessages             ← Message list (streaming, markdown)
+            └─ Composer                   ← Input with send button
+
+dashboard/src/components/sidebar.tsx     ← Existing sidebar, add trigger button
+  └─ AskButton (bottom-left)             ← Toggles panel open/closed + sidebar collapse
+```
+
+The `ChatModelAdapter` calls a backend endpoint that:
+1. Receives the conversation (user question + history)
+2. Sends it to Claude with the GraphQL schema as system context
+3. Claude generates GraphQL queries using `query_ontology` tool
+4. Backend executes queries against the existing Apollo Server
+5. Claude formats the answer and optionally calls `generate_chart`
+6. Streams the response back to assistant-ui
+
+#### Backend Tools
+
+LLM tools that grow as layers ship:
 
 | Tool | What it does | Layer | Available |
 |------|-------------|-------|-----------|
-| `query_ontology` | Execute a GraphQL query | Layer 1 | Phase 1 (day one) |
-| `generate_chart` | Produce a visualization spec from data | Viz library | Phase 1 |
+| `query_ontology` | Execute a GraphQL query against the existing API | Layer 1 | Phase 2 (now) |
+| `generate_chart` | Produce a visualization spec from query results | Viz library | Phase 2 |
 | `execute_rule` | Run a named rule with parameters | Layer 2 | Phase 3 (when rules engine ships) |
 
-**Without Layer 2**, the LLM can still:
-- Answer "how's the sprint?" — queries sprint progress view
-- Answer "what's Luke working on?" — queries tasks by owner
-- Show transcript messages for any session
-- Generate charts from any query result
+#### What's answerable today (Layer 1 only)
 
-**With Layer 2** (additive, no rewiring), the LLM gains:
+| Question | GraphQL query |
+|----------|--------------|
+| "What's Ella working on?" | `tasks(owner: "ella")` |
+| "How's the sprint?" | `sprint(name: "X") { progress { ... } }` |
+| "Who has the most reversions?" | `developerQuality` |
+| "Which tasks blew up?" | `blowUpFactors` |
+| "What skills are being used?" | `skillUsage` |
+| "Show me today's session activity" | `sessionTimeline(dateFrom: "...")` |
+| "What's the estimation accuracy by type?" | `estimationAccuracyByType` |
+| "Show me audit findings for Luke" | `commonAuditFindings(owner: "luke")` |
+
+#### What requires Layer 2 (additive, no rewiring)
+
 - "When will the sprint finish?" — calls forecast rule
 - "Who should take this task?" — calls assignment rule
 - "Is anything at risk?" — calls risk detection rule
 
-**Natural language query flow:**
-1. User: "How's the sprint?"
-2. LLM introspects GraphQL schema (cached)
-3. LLM constructs + executes query
-4. If rules engine available, evaluates relevant rules (risk, forecast)
-5. LLM formats human-readable answer
-6. Optionally generates a chart
+#### Data coverage gaps
 
-**Dynamic dashboard generation:**
-Given a question, the Intelligence layer determines what data to fetch (ontology), what rules to evaluate (if available), and what visualizations to render. Dashboards are assembled, not pre-built.
+Questions we want to answer but can't yet:
+- "What is each developer doing *right now*?" — needs real-time session status, not just historical transcripts
+- Time-windowed aggregate queries ("What did the team do last week?") — most analytics views lack date range filters; need to add `dateFrom`/`dateTo` params to key queries
+
+#### Natural language query flow
+
+1. Admin: "How's the sprint?"
+2. Backend sends question + GraphQL schema to Claude
+3. Claude constructs + executes `query_ontology` (GraphQL query)
+4. If rules engine available, evaluates relevant rules (risk, forecast)
+5. Claude formats human-readable answer
+6. Optionally calls `generate_chart` → assistant-ui renders via Generative UI
+7. Response streams back to the chat thread
 
 ### Pre-Built Dashboards
 
@@ -270,7 +351,7 @@ Changes to existing tables and new tables needed before building the API. These 
 
 **`tasks`** — two column changes:
 - `complexity`: TEXT enum (`low`/`medium`/`high`/`unknown`) → **REAL numeric** (e.g. 1.0-10.0). Allows continuous scoring, machine-learned values, and meaningful comparisons. Migration: map low=2.0, medium=5.0, high=8.0, unknown=NULL.
-- `estimated_hours` → **`estimated_minutes`** REAL. Minutes are the natural unit for AI-assisted tasks (most complete in 15-90 min, not 1-8 hours). All velocity views update accordingly.
+- ~~`estimated_hours` → **`estimated_minutes`** REAL~~ **Done**. Minutes are the natural unit for AI-assisted tasks (most complete in 15-90 min, not 1-8 hours). All velocity views updated.
 
 **`developers`** — structural change:
 - **Drop** fixed skill columns (`skill_react`, `skill_node`, `skill_database`, `skill_infra`, `skill_testing`, `skill_debugging`). Replaced by `developer_skills` table (see below).
@@ -443,21 +524,42 @@ WHERE t.started_at IS NOT NULL AND t.completed_at IS NOT NULL;
 
 ## Implementation Plan
 
-| Phase | What | Blocked on | Parallel? |
-|-------|------|-----------|-----------|
-| 0 | **Schema foundations** — add sprints, projects, contributor_availability, activity_log tables. Backfill sprints from existing task data. | Nothing | — |
-| 1 | **GraphQL Ontology** — Apollo Server, TypeScript, full schema for all entities, resolvers wrapping existing SQL views, JSONL transcript reader | Phase 0 | — |
-| 2 | **Intelligence (ontology-only)** — LLM tools for `query_ontology` + `generate_chart`, natural language queries, dynamic dashboard generation. Works without rules engine. | Phase 1 | — |
-| 3 | **Rules Engine** — Software 1.0 first (hand-tuned weighted scoring), then 2.0 (learned weights from historical data). See `rules-engine.md`. Expose via GraphQL, add `execute_rule` tool to Intelligence layer. | Nothing (design in parallel with Phase 0-2) | Parallel with Phase 2 |
-| 4 | **Dashboard migration** — pre-built views powered by GraphQL, Next.js frontend, Supabase for multi-user | Phase 1 | Parallel with Phase 2-3 |
+| Phase | What | Status |
+|-------|------|--------|
+| 0 | **Schema foundations** — sprints, projects, contributor_availability, activity_log, developer_skills, developer_context tables. Backfill sprints from task data. | **Complete** (migration 004) |
+| 1 | **GraphQL Ontology** — Apollo Server, TypeScript, full schema for all entities, resolvers, JSONL transcript reader, analytics views, conversation feed, session timeline | **Complete** (65+ fields, 30+ views, 11 tables) |
+| 1.1 | **Schema cleanup** — ~~`estimated_hours` → `estimated_minutes`~~ **Done**, `complexity` TEXT → REAL, drop legacy `skill_*` columns, add `baseline_competency` to developers | Partially complete (`estimated_minutes` done; rest deferred) |
+| 2 | **Intelligence (ontology-only)** — chat UI + LLM backend for natural language queries against the GraphQL API | **Active — scoping now** |
+| 3 | **Rules Engine** — Software 1.0 first, then 2.0. See `rules-engine.md`. Add `execute_rule` tool to Intelligence layer. | Designed, not started |
+| 4 | **Dashboard polish** — pre-built views, Gantt UX, data completeness | In progress (parallel) |
+
+### Phase 2 breakdown (Intelligence layer)
+
+This is the active work. Deliverables:
+
+1. **Chat backend endpoint** — API route in the dashboard (or standalone) that:
+   - Accepts a conversation (question + history)
+   - Injects GraphQL schema as system context for Claude
+   - Implements `query_ontology` tool (executes GraphQL against localhost:4000)
+   - Implements `generate_chart` tool (returns a visualization spec)
+   - Streams the response
+
+2. **Chat frontend** — New `/ask` page in the Next.js dashboard using `@assistant-ui/react`:
+   - `LocalRuntime` with `ChatModelAdapter` pointing to the chat backend
+   - Generative UI components for tool call results (data tables, charts)
+   - Markdown rendering for text responses
+
+3. **GraphQL schema context** — Export the introspection result or a curated schema summary that Claude can use to construct valid queries. Include descriptions of what each query/view returns.
+
+4. **Date range filters** — Add `dateFrom`/`dateTo` parameters to key analytics queries so time-windowed questions work ("What did the team do last week?").
 
 ---
 
 ## Open Questions
 
 1. ~~GraphQL vs REST?~~ **Resolved**: GraphQL — schema introspection lets LLMs discover the data model, and nested queries match the relational data well.
-2. **SQLite → Postgres timing** — start SQLite (local-first, matches existing stack). Move to Postgres when multi-user real-time dashboards need concurrent writes.
-3. **Dynamic dashboard scope** — is "generate a dashboard from a question" core v1 or a stretch goal?
+2. ~~SQLite → Postgres timing~~ **Partially resolved**: SQLite locally, Supabase sync for transcripts already shipped (migrations 008-009). Full Postgres migration deferred until multi-user concurrent writes are needed.
+3. **Dynamic dashboard scope** — is "generate a dashboard from a question" core v1 or a stretch goal? *Recommendation: stretch goal. v1 is text answers + simple charts via `generate_chart`. Dynamic dashboard assembly is Layer 3.1.*
 5. **Contributor availability sync** — what's the API/format of the external custom system? Need to define the adapter for calendar data and daily availability.
 6. **Hosting** — local dev server is fine for single-user. When does this need to be hosted? Likely when Goal 8 (Ubiquitous Access) activates.
 7. **Skill tree taxonomy** — what categories and skills should seed the tree? Should be data-driven (mined from task types, tools used) rather than hand-coded. Need to define the initial seed set and the process for discovering new skills from task data.
@@ -466,7 +568,9 @@ WHERE t.started_at IS NOT NULL AND t.completed_at IS NOT NULL;
 10. **Real-time transcript streaming** — current JSONL files are written post-session. For near-real-time dashboard views of active sessions, need a streaming mechanism (file watching, WebSocket from Claude Code, or polling).
 11. **Effectiveness recomputation** — what rolling window? 7 days? 30 days? Weighted recency? Needs experimentation to find the right balance between responsiveness and stability.
 12. **GraphQL → Graph DB timing** — GraphQL over a relational DB is the right starting point. If multi-hop ontological reasoning becomes a bottleneck (e.g., "find developers who've worked on similar tasks in sprints with above-average velocity"), evaluate migrating the backing store to a property graph database (Neo4j, etc.). The GraphQL schema serves as a clean intermediate representation that maps onto a property graph. Migration is mechanical if inference logic stays in the rules engine and out of SQL views.
-13. **Chat component backend migration** — An existing chat component is already built atop Databricks. The chat UI is reusable; the backend (Databricks → custom Layer 3 Intelligence) should be swappable via an adapter. When Layer 3 ships, migrate the chat backend from Databricks to `query_ontology` + `generate_chart` tools. The chat UI component stays the same — only the data/LLM backend changes. Evaluate whether any Databricks-specific features (Unity Catalog semantic layer, Mosaic AI) are worth retaining as an optional backend vs. fully replacing with the custom GraphQL + LLM tool approach.
+13. ~~Chat component backend migration~~ **Resolved**: Skip Databricks adapter swap entirely. Build the chat frontend fresh using `assistant-ui` (`@assistant-ui/react`) on the existing Next.js dashboard. `LocalRuntime` + `ChatModelAdapter` connects to a custom backend that calls Claude with the GraphQL schema as context. Databricks chat component is not reused — assistant-ui provides a better, more composable solution that's native to the existing stack.
+14. **Schema context strategy** — How to present the GraphQL schema to Claude for query generation. Options: (a) full introspection JSON (large but complete), (b) curated summary with query names + descriptions + example queries (smaller, higher quality), (c) hybrid — summary for routing, introspection on demand. Needs experimentation.
+15. **LLM model selection for chat backend** — Claude Sonnet for speed/cost on simple queries vs. Opus for complex multi-step reasoning? Could route based on query complexity.
 
 ---
 
@@ -476,6 +580,10 @@ WHERE t.started_at IS NOT NULL AND t.completed_at IS NOT NULL;
 - `coordination.md` — Supabase shared store, developer twins
 - `../done/observability.md` — data collection pipeline, workflow_events
 - `developer-twin.md` — twin data model, routing interface
-- `.pm/schema.sql` — current database schema (6 tables, 30+ views)
+- `.pm/schema.sql` — current database schema (11 tables, 30+ views)
+- `platform/src/schema/typeDefs.ts` — GraphQL schema (65+ fields)
+- `platform/src/resolvers/` — resolver implementations
 - [Palantir Foundry Ontology](https://www.palantir.com/docs/foundry/ontology/overview) — architectural inspiration
 - `rules-engine.md` — Layer 2 detailed design (Software 1.0/2.0/3.0 architecture)
+- [assistant-ui](https://www.assistant-ui.com/) — React chat component library (Layer 3 frontend)
+- [assistant-ui GitHub](https://github.com/assistant-ui/assistant-ui) — source, examples, runtime docs

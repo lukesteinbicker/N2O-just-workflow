@@ -117,13 +117,16 @@ sqlite3 .pm/tasks.db "INSERT INTO workflow_events (sprint, task_num, event_type,
 sqlite3 .pm/tasks.db "INSERT INTO workflow_events (sprint, task_num, event_type, skill_name, phase, session_id) VALUES ('${sprint}', ${taskNum}, 'phase_entered', 'pm-agent', 'AUDIT_CODE', '$(echo $CLAUDE_SESSION_ID)');"
 ```
 
-**Before writing ANY spec, audit what already exists.**
+**Before writing ANY spec, audit what already exists — both in your codebase and in the wider ecosystem.**
 
 This prevents:
 - Proposing components that already exist
 - Creating new packages when features can extend existing ones
 - Over-engineering with redundant abstractions
 - Specs that duplicate existing functionality
+- Designing in a vacuum without learning from best-in-class tools
+
+**Prior art research happens here too.** While auditing your own code, also research how leading products solve the same problem. This feeds directly into the spec's Prior Art and Ideal State sections.
 
 ### Audit Checklist
 
@@ -177,6 +180,9 @@ sqlite3 .pm/tasks.db "INSERT INTO workflow_events (sprint, task_num, event_type,
 **Action**: Move from backlog to `.pm/todo/{group}/`, refine into spec.
 
 **Spec is ready when**:
+- Goal is articulated (why we're building this, what user problem it solves)
+- Success criteria defined (quantitative and/or qualitative, depending on the feature)
+- Prior art reviewed (how best-in-class tools handle this)
 - Problem is clear
 - Solution approach defined
 - Acceptance criteria are testable
@@ -203,8 +209,11 @@ Every spec follows the pyramid principle: **answer first, details later.** A rea
 ## Table of Contents
 
 - [Recent Changes](#recent-changes)
+- [Goal](#goal)
+- [Success Criteria](#success-criteria)
+- [Prior Art](#prior-art)
 - [Current State](#current-state)
-- [Vision](#vision)
+- [Ideal State](#ideal-state)
 - [Design](#design)
 - [Schema](#schema)
 - [Implementation Plan](#implementation-plan)
@@ -224,9 +233,37 @@ Reverse-chronological. A returning reader scans this and knows whether to re-rea
 
 ---
 
+## Goal
+
+**Why are we building this?** What user problem does it solve? What's the motivation?
+
+1-3 sentences. A reader should understand the purpose before anything else.
+
+---
+
+## Success Criteria
+
+**How do we know this worked?** Mix of quantitative and qualitative depending on the feature.
+
+- [Quantitative: metric X improves by Y%, load time under Z ms, etc.]
+- [Qualitative: users can complete X without asking for help, workflow feels intuitive, etc.]
+
+---
+
+## Prior Art
+
+**How do best-in-class tools handle this?** 2-3 examples with what they do well and what we'd do differently.
+
+- **[Tool A]**: [what they do, what's good, what we'd change]
+- **[Tool B]**: [what they do, what's good, what we'd change]
+
+*(Use web search to research how leading products solve this problem.)*
+
+---
+
 ## Current State
 
-**What exists today.** 3-5 bullets. Ground the reader before the vision.
+**What exists today.** 3-5 bullets. Ground the reader before the ideal state.
 
 - [what is done]
 - [what is partially done]
@@ -234,15 +271,19 @@ Reverse-chronological. A returning reader scans this and knows whether to re-rea
 
 ---
 
-## Vision
+## Ideal State
 
-**Where we are going.** 1-2 paragraphs max. The north star.
+**What does the best possible version look like, unconstrained?** Describe the dream — no resource, time, or technical constraints. This is the north star.
+
+1-2 paragraphs. The Design section below scopes down from this ideal, making trade-offs explicit.
 
 ---
 
 ## Design
 
-The bulk of the spec. Each subsection opens with a **one-sentence answer** (what we decided), then reasoning, then details.
+**What we're actually building, given constraints.** Each subsection opens with a **one-sentence answer** (what we decided), then reasoning, then details.
+
+**Trade-offs from ideal**: [What we're deferring and why — makes the gap between Ideal State and Design explicit]
 
 **This spec covers**:
 - Component A
@@ -289,7 +330,9 @@ Numbered. Resolved questions are struck through with the answer inline (not dele
 
 **Key template rules:**
 - **Recent Changes is the second section** — eliminates "re-read the whole spec" friction
-- **Current State before Vision** — "where are we" before "where are we going"
+- **Goal → Success Criteria → Prior Art before Design** — establish the "why," how you'll measure it, and what good looks like before proposing a solution
+- **Current State before Ideal State** — "where are we" before "where we could go"
+- **Ideal State before Design** — dream version first, then scope down with explicit trade-offs
 - **One-line summary under the title** — forces clarity, makes directory scanning fast
 - **Struck-through open questions** — resolved questions keep their reasoning
 - **Not every section is required** — Schema and Implementation Plan are optional
@@ -358,6 +401,8 @@ sqlite3 .pm/tasks.db "INSERT INTO workflow_events (sprint, task_num, event_type,
 
 ```
 □ 1. AUDIT CODE
+    - Run `/code-health` full scan to establish baseline debt level
+    - Note critical findings — new tasks touching flagged files should include cleanup
     - Spin up parallel subagents per spec area
     - What exists? Update "What's Done" sections
     - What's missing/blocked? Flag external deps
@@ -420,7 +465,7 @@ Before loading to SQLite:
 
 **E2E specs: Single task.** All E2E verification for a sprint should be ONE task, not split by feature.
 
-**One session** = 1-4 hours of focused work.
+**One session** = 15-60 minutes of focused work.
 
 | Size | Example | Verdict |
 |------|---------|---------|
@@ -500,9 +545,9 @@ sqlite3 .pm/tasks.db < .pm/todo/new-sprint/tasks.sql
 
 ```sql
 -- .pm/todo/crm/tasks.sql
-INSERT INTO tasks (sprint, spec, task_num, title, type, owner, skills, estimated_hours, complexity, complexity_notes, done_when, description) VALUES
+INSERT INTO tasks (sprint, spec, task_num, title, type, owner, skills, estimated_minutes, complexity, complexity_notes, done_when, description) VALUES
 ('crm-foundation', '01-deals-pipeline.md', 1, 'Create CRM tasks table', 'database', 'adam', 'database',
-  2.0, 'medium', NULL,
+  30, 'medium', NULL,
   'Migration runs, RLS policies pass pgTap (positive + negative cases)',
   'Build tasks table for human-in-the-loop agent approvals.');
 
@@ -517,13 +562,13 @@ INSERT INTO task_dependencies (sprint, task_num, depends_on_sprint, depends_on_t
 - `type`: Task layer — one of: `database`, `actions`, `frontend`, `infra`, `agent`, `e2e`, `docs`
 - `owner`: Engineer assigned (e.g., `'ada'`, `'adam'`)
 - `skills`: Comma-separated skills to invoke (e.g., `'database'`, `'server-actions, tanstack-hooks'`)
-- `estimated_hours`: PM's time estimate — set at planning time, **never adjusted after work starts**
+- `estimated_minutes`: PM's time estimate in minutes — set at planning time, **never adjusted after work starts**
 - `complexity`: One of `low`, `medium`, `high`, `unknown`. High = wider probability distribution on completion time
 - `complexity_notes`: Why it's complex (e.g., `'unstable API'`, `'heavy cross-service integration'`, `'first time using this library'`). Leave NULL for straightforward tasks
 
 ### Estimation Guidelines
 
-**Set `estimated_hours` for every task during planning.** This is the PM's best guess before work starts. Don't adjust after seeing actuals — the whole point is measuring estimation accuracy over time.
+**Set `estimated_minutes` for every task during planning.** This is the PM's best guess in minutes before work starts. Don't adjust after seeing actuals — the whole point is measuring estimation accuracy over time.
 
 **Rules of thumb for `complexity`**:
 - **low** — Repeated pattern, no external dependencies, isolated scope (e.g., "another CRUD endpoint")

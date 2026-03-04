@@ -197,7 +197,7 @@ What we collect today vs what we'd need:
 | Tool call frequency | Yes | workflow_events table | Per tool, per session |
 | Skill invocations | Partial | workflow_events (skill_name) | Captured but not surfaced well in stats |
 | Phase durations | Yes | workflow_events (phase_entered) | Only for sessions that use skills |
-| Estimation accuracy | Yes | tasks table | estimated_hours vs actual |
+| Estimation accuracy | Yes | tasks table | estimated_minutes vs actual |
 | Blow-up ratios | Yes | estimation_accuracy view | Per developer |
 | Sprint velocity | Yes | sprint_velocity view | Per sprint |
 | Reversion count | Yes | tasks table | reversions column, auto-incremented |

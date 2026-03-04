@@ -21,7 +21,7 @@ All metrics are derivable from `tasks`, `transcripts`, and `workflow_events` tab
 
 ### 2. Efficiency
 **Definition:** Average minutes per task (start to green).
-**Source:** `velocity_report` view — `hours_to_complete * 60`.
+**Source:** `velocity_report` view — `minutes_to_complete`.
 **Target:** Trending downward for same complexity level.
 
 ### 3. Quality
@@ -104,7 +104,7 @@ These metrics are not yet implemented but are derivable from data we already col
 ### Completion Forecast
 **Definition:** Estimated date when remaining sprint/project tasks will be done.
 **Derivable from:** `velocity_report` (tasks/day rate), `available_tasks` (remaining count), `task_dependencies` (critical path), `estimation_accuracy` (blow-up ratio correction).
-**Formula:** `remaining_tasks × avg_hours_per_task × avg_blow_up_ratio = estimated_remaining_hours`. Critical path analysis from `task_dependencies` gives the minimum wall time assuming full parallelism.
+**Formula:** `remaining_tasks × avg_minutes_per_task × avg_blow_up_ratio = estimated_remaining_minutes`. Critical path analysis from `task_dependencies` gives the minimum wall time assuming full parallelism.
 **Why not now:** Needs enough historical data to produce stable velocity estimates. Meaningful after 2-3 sprints.
 
 ### Velocity Trend
@@ -114,7 +114,7 @@ These metrics are not yet implemented but are derivable from data we already col
 
 ### True Parallelism Factor
 **Definition:** Ratio of wall-clock time to sequential time. If 8 tasks take 3 hours of wall time but would take 12 hours sequentially, the parallelism factor is 4x.
-**Derivable from:** Overlapping `transcripts.started_at`/`ended_at` windows + `tasks.estimated_hours`.
+**Derivable from:** Overlapping `transcripts.started_at`/`ended_at` windows + `tasks.estimated_minutes`.
 **Why not now:** Requires completed sprints with enough tasks to compute meaningful ratios.
 
 ---

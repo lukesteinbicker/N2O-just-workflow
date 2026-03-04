@@ -169,7 +169,7 @@ Natively makes people faster. Metrics prove it.
 | Throughput | Tasks completed in 7d / 30d windows | `tasks.completed_at` | `n2o:1675-1677` |
 | Efficiency | Avg minutes per task (start → complete) | `tasks.started_at, completed_at` | `n2o:1680-1681` |
 | Quality | % of tasks with `testing_posture='A'` | `tasks.testing_posture` | `n2o:1684-1685` |
-| Predictability | Avg blow-up ratio (actual / estimated hours) | `tasks.actual_hours, estimated_hours` | `n2o:1688-1689` |
+| Predictability | Avg blow-up ratio (actual / estimated minutes) | `tasks.actual_minutes, estimated_minutes` | `n2o:1688-1689` |
 | Adoption | % of tasks using tdd-agent skill | `workflow_events.skill_name` | `n2o:1691-1693` |
 | Cost/Task | Avg `estimated_cost_usd` per task | `transcripts.estimated_cost_usd` | `n2o:1695-1697` |
 | Peak Tasks | Peak overlapping tasks (`tasks.started_at`/`completed_at`) | `tasks` | `n2o:1699-1701` |
