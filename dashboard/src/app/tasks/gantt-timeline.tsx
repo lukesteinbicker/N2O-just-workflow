@@ -249,19 +249,34 @@ export function GanttTimeline({
               const toY = targetY + ROW_HEIGHT / 2;
               const midX = fromX + 8;
 
-              const depStatus = STATUS_LABELS[depTask.status] ?? depTask.status;
-              const targetStatus = STATUS_LABELS[t.status] ?? t.status;
+              // Active blocker = dep is not green (still blocking the target)
+              const isActiveBlocker = depTask.status !== "green";
+              const lineColor = isActiveBlocker ? "#CD4246" : "#394048";
+              const lineOpacity = isActiveBlocker ? 0.7 : 0.4;
+              const dashArray = isActiveBlocker ? undefined : "4 3";
+              const lineWidth = isActiveBlocker ? 1.5 : 1;
+
+              const tooltipText = isActiveBlocker
+                ? `Task #${dep.taskNum} blocks #${t.taskNum}`
+                : `Task #${dep.taskNum} \u2192 #${t.taskNum} (resolved)`;
 
               return (
-                <g key={`${depKey}->${targetKey}`} style={{ pointerEvents: "auto" }} className="cursor-default">
-                  <title>{`#${dep.taskNum} (${depStatus}) → #${t.taskNum} (${targetStatus})`}</title>
-                  <line x1={fromX} y1={fromY} x2={midX} y2={fromY} stroke="transparent" strokeWidth={8} />
-                  <line x1={midX} y1={fromY} x2={midX} y2={toY} stroke="transparent" strokeWidth={8} />
-                  <line x1={midX} y1={toY} x2={toX} y2={toY} stroke="transparent" strokeWidth={8} />
-                  <line x1={fromX} y1={fromY} x2={midX} y2={fromY} stroke="#5C7080" strokeWidth={1} opacity={0.4} />
-                  <line x1={midX} y1={fromY} x2={midX} y2={toY} stroke="#5C7080" strokeWidth={1} opacity={0.4} />
-                  <line x1={midX} y1={toY} x2={toX} y2={toY} stroke="#5C7080" strokeWidth={1} opacity={0.4} />
-                  <circle cx={toX} cy={toY} r={2.5} fill="#5C7080" opacity={0.5} />
+                <g
+                  key={`${depKey}->${targetKey}`}
+                  style={{ pointerEvents: "auto" }}
+                  className="cursor-default"
+                  data-testid={`dep-line-${dep.taskNum}-${t.taskNum}`}
+                >
+                  <title>{tooltipText}</title>
+                  {/* Invisible wider hit area for hover */}
+                  <line x1={fromX} y1={fromY} x2={midX} y2={fromY} stroke="transparent" strokeWidth={10} />
+                  <line x1={midX} y1={fromY} x2={midX} y2={toY} stroke="transparent" strokeWidth={10} />
+                  <line x1={midX} y1={toY} x2={toX} y2={toY} stroke="transparent" strokeWidth={10} />
+                  {/* Visible lines */}
+                  <line x1={fromX} y1={fromY} x2={midX} y2={fromY} stroke={lineColor} strokeWidth={lineWidth} opacity={lineOpacity} strokeDasharray={dashArray} />
+                  <line x1={midX} y1={fromY} x2={midX} y2={toY} stroke={lineColor} strokeWidth={lineWidth} opacity={lineOpacity} strokeDasharray={dashArray} />
+                  <line x1={midX} y1={toY} x2={toX} y2={toY} stroke={lineColor} strokeWidth={lineWidth} opacity={lineOpacity} strokeDasharray={dashArray} />
+                  <circle cx={toX} cy={toY} r={isActiveBlocker ? 3 : 2.5} fill={lineColor} opacity={isActiveBlocker ? 0.8 : 0.5} />
                 </g>
               );
             });
