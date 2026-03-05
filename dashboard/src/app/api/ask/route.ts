@@ -2,6 +2,10 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { getSchemaContext } from "@/lib/ask/schema-context";
 import { executeQuery } from "@/lib/ask/execute-query";
+import {
+  buildContextPrompt,
+  type AskContext,
+} from "@/lib/ask/context-builder";
 
 const anthropic = new Anthropic();
 
@@ -70,12 +74,82 @@ const CHART_TOOL: Anthropic.Tool = {
   },
 };
 
+const PAST_CHATS_TOOL: Anthropic.Tool = {
+  name: "past_chats",
+  description:
+    "List recent past conversations from the Ask panel chat history. Use this to find and reference prior discussions. Optionally load a specific chat by ID to get its full messages.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      chatId: {
+        type: "string",
+        description:
+          "Optional: ID of a specific past chat to load. If omitted, returns a list of recent chat titles/summaries.",
+      },
+    },
+    required: [],
+  },
+};
+
+const RECOMMEND_VIEW_TOOL: Anthropic.Tool = {
+  name: "recommend_view",
+  description:
+    "Recommend a specific dashboard view to the user. Returns a structured suggestion with a page route and optional filter parameters that the UI renders as a clickable link. Use this when the user would benefit from viewing a specific page with specific filters applied.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      route: {
+        type: "string",
+        description:
+          "The dashboard route to navigate to (e.g., '/tasks', '/sprints', '/activity')",
+      },
+      filters: {
+        type: "object",
+        properties: {
+          person: {
+            type: "string",
+            description: "Filter by developer name",
+          },
+          project: {
+            type: "string",
+            description: "Filter by project name",
+          },
+          groupBy: {
+            type: "string",
+            enum: ["project", "developer", "status"],
+            description: "Group tasks by this dimension",
+          },
+        },
+        description: "Optional filter parameters to apply on the target page",
+      },
+      label: {
+        type: "string",
+        description:
+          "Human-readable label for the link (e.g., 'View blocked tasks in coordination')",
+      },
+    },
+    required: ["route", "label"],
+  },
+};
+
 type MessageParam = Anthropic.MessageParam;
 
 export async function POST(request: Request) {
   const body = await request.json();
-  const { messages: clientMessages } = body as {
+  const {
+    messages: clientMessages,
+    developer,
+    route: clientRoute,
+    filters: clientFilters,
+    visibleDataSummary,
+    pastChats,
+  } = body as {
     messages: Array<{ role: "user" | "assistant"; content: string }>;
+    developer?: string;
+    route?: string;
+    filters?: { person: string | null; project: string | null; groupBy: string };
+    visibleDataSummary?: string | null;
+    pastChats?: Array<{ id: string; title: string; createdAt: string; messages?: Array<{ role: string; content: string }> }>;
   };
 
   if (
@@ -99,11 +173,32 @@ export async function POST(request: Request) {
       "Let the user know you cannot query data right now.";
   }
 
+  const now = new Date().toISOString();
+  const developerLine = developer
+    ? `The developer asking is: ${developer}.`
+    : "";
+
+  // Build user context section from client-provided state
+  const askContext: AskContext = {
+    date: now,
+    route: clientRoute || "/",
+    filters: clientFilters || { person: null, project: null, groupBy: "project" },
+    visibleDataSummary: visibleDataSummary || null,
+  };
+  const contextSection = buildContextPrompt(askContext);
+
   const systemPrompt = `You are an analytics assistant for the N2O developer workflow platform. N2O tracks software development work: tasks, sprints, developers, code quality, estimation accuracy, and velocity.
+
+The current date and time is: ${now}. Use this to anchor any time-relative queries (e.g. "last 2 hours", "today", "this week").
+${developerLine}
+
+${contextSection}
 
 ## Your capabilities
 - Query live project data via GraphQL (query_ontology tool)
 - Visualize data with charts (generate_chart tool — bar, line, pie)
+- Browse past Ask conversations (past_chats tool)
+- Recommend dashboard views with filters (recommend_view tool)
 
 ## Schema reference
 
@@ -116,6 +211,9 @@ ${schemaContext}
 4. When results would benefit from a chart (trends over time, comparisons, proportions), use generate_chart after getting the data.
 5. Keep your answers concise. Summarize key insights, highlight what's notable or surprising, and call out specific names/numbers. Don't just restate the table.
 6. When suggesting follow-up questions, make them specific and actionable based on the data you've seen.
+7. **Do not use emojis in your responses.** Use plain text headings and bullet points instead.
+8. When a user's question relates to what they're currently viewing, use the User context section above for awareness of their current page, filters, and visible data.
+9. Use recommend_view to suggest specific dashboard pages with filters when appropriate — for example, "You might want to check the blocked tasks view" becomes a clickable link.
 
 ## Query selection guide — pick the RIGHT query for the question
 
@@ -151,18 +249,26 @@ ${schemaContext}
 
       try {
         // Build conversation messages — filter out any with empty content
-        const messages: MessageParam[] = clientMessages
+        const allMessages = clientMessages
           .filter((m) => m.content && m.content.trim().length > 0)
           .map((m) => ({
             role: m.role as "user" | "assistant",
             content: m.content,
           }));
 
-        if (messages.length === 0) {
+        if (allMessages.length === 0) {
           send({ type: "error", error: "No valid messages provided" });
           controller.close();
           return;
         }
+
+        // Truncate to last 20 messages (10 exchanges) to prevent token overflow.
+        // Always keep at least the latest user message.
+        const MAX_HISTORY = 20;
+        const messages: MessageParam[] =
+          allMessages.length > MAX_HISTORY
+            ? allMessages.slice(-MAX_HISTORY)
+            : allMessages;
 
         // Tool call loop: Claude may call tools multiple times
         let continueLoop = true;
@@ -173,19 +279,27 @@ ${schemaContext}
           iteration++;
 
           const stream = anthropic.messages.stream({
-            model: "claude-sonnet-4-5-20250929",
-            max_tokens: 2048,
+            model: "claude-opus-4-6",
+            max_tokens: 16384,
+            thinking: { type: "enabled", budget_tokens: 8000 },
             system: systemPrompt,
             messages,
-            tools: [QUERY_TOOL, CHART_TOOL],
+            tools: [QUERY_TOOL, CHART_TOOL, PAST_CHATS_TOOL, RECOMMEND_VIEW_TOOL],
           });
 
           for await (const event of stream) {
-            if (
-              event.type === "content_block_delta" &&
-              event.delta.type === "text_delta"
-            ) {
-              send({ type: "text_delta", content: event.delta.text });
+            if (event.type === "content_block_delta") {
+              if (event.delta.type === "text_delta") {
+                send({ type: "text_delta", content: event.delta.text });
+              } else if (
+                event.delta.type === "thinking_delta" &&
+                "thinking" in event.delta
+              ) {
+                send({
+                  type: "thinking_delta",
+                  content: (event.delta as { thinking: string }).thinking,
+                });
+              }
             }
           }
 
@@ -224,10 +338,18 @@ ${schemaContext}
                   result: result,
                 });
 
+                // Cap tool result size to prevent token overflow
+                const resultJson = JSON.stringify(result);
+                const cappedResult =
+                  resultJson.length > 8000
+                    ? resultJson.slice(0, 8000) +
+                      "\n... [truncated — result too large, showing first 8000 chars]"
+                    : resultJson;
+
                 toolResults.push({
                   type: "tool_result",
                   tool_use_id: toolUse.id,
-                  content: JSON.stringify(result),
+                  content: cappedResult,
                 });
               } else if (toolUse.name === "generate_chart") {
                 send({
@@ -242,6 +364,69 @@ ${schemaContext}
                   type: "tool_result",
                   tool_use_id: toolUse.id,
                   content: "Chart rendered successfully.",
+                });
+              } else if (toolUse.name === "past_chats") {
+                const input = toolUse.input as { chatId?: string };
+
+                let result: unknown;
+                if (input.chatId && pastChats) {
+                  // Load a specific chat
+                  const chat = pastChats.find((c) => c.id === input.chatId);
+                  result = chat
+                    ? { found: true, chat }
+                    : { found: false, error: `Chat ${input.chatId} not found` };
+                } else {
+                  // List recent chats (titles + IDs only)
+                  const summary = (pastChats || []).map((c) => ({
+                    id: c.id,
+                    title: c.title,
+                    createdAt: c.createdAt,
+                  }));
+                  result =
+                    summary.length > 0
+                      ? { chats: summary }
+                      : { chats: [], message: "No past conversations found." };
+                }
+
+                send({
+                  type: "tool_call",
+                  name: toolUse.name,
+                  tool_use_id: toolUse.id,
+                  input,
+                  result,
+                });
+
+                toolResults.push({
+                  type: "tool_result",
+                  tool_use_id: toolUse.id,
+                  content: JSON.stringify(result),
+                });
+              } else if (toolUse.name === "recommend_view") {
+                const input = toolUse.input as {
+                  route: string;
+                  filters?: Record<string, string>;
+                  label: string;
+                };
+
+                const result = {
+                  type: "view_recommendation",
+                  route: input.route,
+                  filters: input.filters || {},
+                  label: input.label,
+                };
+
+                send({
+                  type: "tool_call",
+                  name: toolUse.name,
+                  tool_use_id: toolUse.id,
+                  input,
+                  result,
+                });
+
+                toolResults.push({
+                  type: "tool_result",
+                  tool_use_id: toolUse.id,
+                  content: `View recommendation created: "${input.label}" → ${input.route}`,
                 });
               }
             }

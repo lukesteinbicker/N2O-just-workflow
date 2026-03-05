@@ -1,23 +1,27 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
+import { usePathname, useSearchParams } from "next/navigation";
 import {
   X,
   Maximize2,
   Minimize2,
   SquarePen,
   ChevronDown,
+  ArrowDown,
 } from "lucide-react";
 import {
   AssistantRuntimeProvider,
   useLocalRuntime,
   useThread,
+  useThreadRuntime,
+  useMessagePart,
   ThreadPrimitive,
   ComposerPrimitive,
   MessagePrimitive,
 } from "@assistant-ui/react";
 import { MarkdownText } from "@/components/assistant-ui/markdown-text";
-import { askAdapter } from "@/lib/ask/chat-adapter";
+import { askAdapter, THINKING_MARKER, setAskAdapterContext } from "@/lib/ask/chat-adapter";
 import { useQueryOntologyToolUI } from "@/components/ask-tool-ui";
 import { useGenerateChartToolUI } from "@/components/ask-chart-ui";
 import {
@@ -28,6 +32,7 @@ import {
   titleFromMessage,
   type ChatEntry,
 } from "@/lib/ask/chat-store";
+import { parseFilterParams } from "@/hooks/use-global-filters";
 
 function ToolRegistration() {
   useQueryOntologyToolUI();
@@ -88,6 +93,51 @@ function ChatPersistence({
   return null;
 }
 
+function ThinkingBlock({ text }: { text: string }) {
+  const [expanded, setExpanded] = useState(false);
+  // Truncate preview to first 120 chars
+  const preview =
+    text.length > 120 ? text.slice(0, 120) + "..." : text;
+
+  return (
+    <div className="mb-2 rounded-md border border-border/50 bg-muted/30 text-xs">
+      <button
+        onClick={() => setExpanded((e) => !e)}
+        className="flex w-full items-center gap-1.5 px-2.5 py-1.5 text-left text-muted-foreground hover:text-foreground"
+      >
+        <ChevronDown
+          size={12}
+          className={`flex-shrink-0 transition-transform ${expanded ? "" : "-rotate-90"}`}
+        />
+        <span className="font-medium">Thinking</span>
+        {!expanded && (
+          <span className="truncate text-muted-foreground/60">
+            {" -- "}
+            {preview}
+          </span>
+        )}
+      </button>
+      {expanded && (
+        <div className="border-t border-border/30 px-2.5 py-2 text-muted-foreground whitespace-pre-wrap">
+          {text}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SmartText() {
+  const part = useMessagePart();
+  const text =
+    part && "text" in part && typeof part.text === "string" ? part.text : "";
+
+  if (text.startsWith(THINKING_MARKER)) {
+    const thinkingContent = text.slice(THINKING_MARKER.length);
+    return <ThinkingBlock text={thinkingContent} />;
+  }
+  return <MarkdownText />;
+}
+
 function UserMessage() {
   return (
     <div className="flex justify-end mb-3">
@@ -102,8 +152,70 @@ function AssistantMessage() {
   return (
     <div className="mb-3">
       <div className="max-w-[85%] rounded-md px-3 py-2 text-sm text-foreground/90">
-        <MessagePrimitive.Content components={{ Text: MarkdownText }} />
+        <MessagePrimitive.Content components={{ Text: SmartText }} />
       </div>
+    </div>
+  );
+}
+
+function QuickAction({ text, className }: { text: string; className?: string }) {
+  const threadRuntime = useThreadRuntime();
+  return (
+    <button
+      onClick={() =>
+        threadRuntime.append({
+          role: "user",
+          content: [{ type: "text", text }],
+        })
+      }
+      className={className}
+    >
+      {text}
+    </button>
+  );
+}
+
+function ScrollToBottom() {
+  const [show, setShow] = useState(false);
+  const viewportRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    // Find the nearest scrollable parent (ThreadPrimitive.Viewport)
+    const el = viewportRef.current?.closest("[data-scroll-viewport]");
+    if (!el) return;
+    const viewport = el as HTMLElement;
+
+    function check() {
+      const distanceFromBottom =
+        viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
+      setShow(distanceFromBottom > 100);
+    }
+
+    viewport.addEventListener("scroll", check);
+    // Also check on resize and content changes
+    const observer = new MutationObserver(check);
+    observer.observe(viewport, { childList: true, subtree: true });
+    check();
+    return () => {
+      viewport.removeEventListener("scroll", check);
+      observer.disconnect();
+    };
+  }, []);
+
+  if (!show) return <div ref={viewportRef} className="hidden" />;
+
+  return (
+    <div ref={viewportRef} className="flex justify-center py-1">
+      <button
+        onClick={() => {
+          const el = viewportRef.current?.closest("[data-scroll-viewport]");
+          if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+        }}
+        className="flex items-center gap-1 rounded-full border border-border bg-background/90 px-3 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary shadow-sm"
+      >
+        <ArrowDown size={12} />
+        Scroll to latest
+      </button>
     </div>
   );
 }
@@ -112,15 +224,23 @@ function AssistantMessage() {
 function AskThread() {
   return (
     <ThreadPrimitive.Root className="flex flex-col h-full min-h-0">
-      <ThreadPrimitive.Viewport className="flex-1 overflow-y-auto px-3 py-4 min-h-0">
+      <ThreadPrimitive.Viewport data-scroll-viewport className="flex-1 overflow-y-auto px-3 py-4 min-h-0">
         <ThreadPrimitive.Empty>
           <div className="flex flex-col items-center justify-center h-full text-muted-foreground text-sm gap-2">
             <p>What would you like to know?</p>
             <div className="flex flex-col gap-1 text-xs">
               <span className="text-muted-foreground/70">Try asking:</span>
-              <span>&ldquo;How&rsquo;s the current sprint?&rdquo;</span>
-              <span>&ldquo;Who has capacity?&rdquo;</span>
-              <span>&ldquo;Show me today&rsquo;s activity&rdquo;</span>
+              {[
+                "How\u2019s the current sprint?",
+                "Who has capacity?",
+                "Show me today\u2019s activity",
+              ].map((q) => (
+                <QuickAction
+                  key={q}
+                  text={q}
+                  className="text-left text-foreground/80 hover:text-foreground cursor-pointer"
+                />
+              ))}
             </div>
           </div>
         </ThreadPrimitive.Empty>
@@ -128,17 +248,20 @@ function AskThread() {
           components={{ UserMessage, AssistantMessage }}
         />
       </ThreadPrimitive.Viewport>
-      <div className="border-t border-border p-3 flex-shrink-0">
-        <ComposerPrimitive.Root className="flex items-end gap-2">
-          <ComposerPrimitive.Input
-            placeholder="Ask a question..."
-            className="flex-1 resize-none rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-            autoFocus
-          />
-          <ComposerPrimitive.Send className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
-            Send
-          </ComposerPrimitive.Send>
-        </ComposerPrimitive.Root>
+      <div className="border-t border-border flex-shrink-0">
+        <ScrollToBottom />
+        <div className="p-3 pt-0">
+          <ComposerPrimitive.Root className="flex items-end gap-2">
+            <ComposerPrimitive.Input
+              placeholder="Ask a question..."
+              className="flex-1 resize-none rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+              autoFocus
+            />
+            <ComposerPrimitive.Send className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+              Send
+            </ComposerPrimitive.Send>
+          </ComposerPrimitive.Root>
+        </div>
       </div>
     </ThreadPrimitive.Root>
   );
@@ -148,7 +271,7 @@ function AskThread() {
 function FullscreenThread() {
   return (
     <ThreadPrimitive.Root className="flex flex-col h-full min-h-0">
-      <ThreadPrimitive.Viewport className="flex-1 overflow-y-auto min-h-0">
+      <ThreadPrimitive.Viewport data-scroll-viewport className="flex-1 overflow-y-auto min-h-0">
         <div className="mx-auto max-w-2xl px-4 py-8">
           <ThreadPrimitive.Empty>
             <div className="flex flex-col items-center justify-center pt-32 text-muted-foreground gap-4">
@@ -161,12 +284,11 @@ function FullscreenThread() {
                   "Show me developer quality metrics",
                   "What tasks are blocked right now?",
                 ].map((q) => (
-                  <div
+                  <QuickAction
                     key={q}
-                    className="rounded-md border border-border px-4 py-2.5 text-sm text-foreground/80 hover:bg-secondary cursor-default"
-                  >
-                    {q}
-                  </div>
+                    text={q}
+                    className="text-left rounded-md border border-border px-4 py-2.5 text-sm text-foreground/80 hover:bg-secondary cursor-pointer"
+                  />
                 ))}
               </div>
             </div>
@@ -177,17 +299,20 @@ function FullscreenThread() {
         </div>
       </ThreadPrimitive.Viewport>
       <div className="border-t border-border flex-shrink-0">
-        <div className="mx-auto max-w-2xl px-4 py-3">
-          <ComposerPrimitive.Root className="flex items-end gap-2">
-            <ComposerPrimitive.Input
-              placeholder="Ask a question"
-              className="flex-1 resize-none rounded-md border border-border bg-background px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-              autoFocus
-            />
-            <ComposerPrimitive.Send className="rounded-md bg-primary px-4 py-3 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
-              Send
-            </ComposerPrimitive.Send>
-          </ComposerPrimitive.Root>
+        <div className="mx-auto max-w-2xl px-4">
+          <ScrollToBottom />
+          <div className="py-3 pt-0">
+            <ComposerPrimitive.Root className="flex items-end gap-2">
+              <ComposerPrimitive.Input
+                placeholder="Ask a question"
+                className="flex-1 resize-none rounded-md border border-border bg-background px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                autoFocus
+              />
+              <ComposerPrimitive.Send className="rounded-md bg-primary px-4 py-3 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+                Send
+              </ComposerPrimitive.Send>
+            </ComposerPrimitive.Root>
+          </div>
         </div>
       </div>
     </ThreadPrimitive.Root>
@@ -286,6 +411,7 @@ function PastChatsDropdown({
 // ── Panel Header ─────────────────────────────────────
 
 function PanelHeader({
+  chatTitle,
   onClose,
   onNewChat,
   onSelectChat,
@@ -293,6 +419,7 @@ function PanelHeader({
   onMinimize,
   isFullscreen,
 }: {
+  chatTitle: string;
   onClose: () => void;
   onNewChat: () => void;
   onSelectChat: (chat: ChatEntry) => void;
@@ -314,10 +441,10 @@ function PanelHeader({
       <div className="relative">
         <button
           onClick={() => setShowHistory((o) => !o)}
-          className="flex items-center gap-1 rounded-md border border-border px-2.5 py-1 text-sm font-medium text-foreground hover:bg-secondary"
+          className="flex items-center gap-1 rounded-md border border-border px-2.5 py-1 text-sm font-medium text-foreground hover:bg-secondary max-w-[200px]"
         >
-          New chat
-          <ChevronDown size={14} className="text-muted-foreground" />
+          <span className="truncate">{chatTitle}</span>
+          <ChevronDown size={14} className="text-muted-foreground flex-shrink-0" />
         </button>
         {showHistory && (
           <PastChatsDropdown
@@ -367,6 +494,7 @@ function PanelHeader({
 
 export function AskContent({
   mode,
+  chatTitle,
   onClose,
   onNewChat,
   onSelectChat,
@@ -374,6 +502,7 @@ export function AskContent({
   onMinimize,
 }: {
   mode: "panel" | "fullscreen";
+  chatTitle?: string;
   onClose: () => void;
   onNewChat: () => void;
   onSelectChat: (chat: ChatEntry) => void;
@@ -389,6 +518,7 @@ export function AskContent({
       }`}
     >
       <PanelHeader
+        chatTitle={chatTitle || "New chat"}
         onClose={onClose}
         onNewChat={onNewChat}
         onSelectChat={onSelectChat}
@@ -403,11 +533,32 @@ export function AskContent({
 
 // ── Runtime Provider (wraps content, owned by Shell) ─────────────────
 
+/** Syncs current route and filters into the adapter context so API calls include them. */
+function ContextSync({ visibleDataSummary }: { visibleDataSummary?: string | null }) {
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const filters = useMemo(() => parseFilterParams(searchParams), [searchParams]);
+
+  useEffect(() => {
+    setAskAdapterContext({
+      route: pathname,
+      filters,
+      visibleDataSummary: visibleDataSummary ?? null,
+    });
+  }, [pathname, filters, visibleDataSummary]);
+
+  return null;
+}
+
 export function AskRuntimeProvider({
   chatId,
+  onChatCreated,
+  visibleDataSummary,
   children,
 }: {
   chatId: string | null;
+  onChatCreated?: (id: string) => void;
+  visibleDataSummary?: string | null;
   children: React.ReactNode;
 }) {
   const initialMessages = useMemo(() => {
@@ -420,12 +571,20 @@ export function AskRuntimeProvider({
     }));
   }, [chatId]);
 
+  const handleChatCreated = useCallback(
+    (id: string) => {
+      onChatCreated?.(id);
+    },
+    [onChatCreated]
+  );
+
   const runtime = useLocalRuntime(askAdapter, { initialMessages });
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
       <ToolRegistration />
-      <ChatPersistence chatId={chatId} />
+      <ContextSync visibleDataSummary={visibleDataSummary} />
+      <ChatPersistence chatId={chatId} onChatCreated={handleChatCreated} />
       {children}
     </AssistantRuntimeProvider>
   );
@@ -444,7 +603,7 @@ export function AskPanel({
 }) {
   if (!open) return null;
   return (
-    <AskRuntimeProvider chatId={null}>
+    <AskRuntimeProvider chatId={null} onChatCreated={() => {}}>
       <AskContent
         mode="panel"
         onClose={onClose}
@@ -465,7 +624,7 @@ export function AskFullscreenPage({
   onMinimize: () => void;
 }) {
   return (
-    <AskRuntimeProvider chatId={null}>
+    <AskRuntimeProvider chatId={null} onChatCreated={() => {}}>
       <AskContent
         mode="fullscreen"
         onClose={onClose}
