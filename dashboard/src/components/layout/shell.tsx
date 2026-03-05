@@ -6,6 +6,7 @@ import { Sidebar } from "./sidebar";
 import { FilterBar } from "./filter-bar";
 import { AskRuntimeProvider, AskContent } from "@/components/ask-panel";
 import { createChat, getChat, type ChatEntry } from "@/lib/ask/chat-store";
+import { HealthFooter } from "./health-footer";
 
 const MIN_PANEL_WIDTH = 300;
 const MAX_PANEL_WIDTH = 750;
@@ -221,6 +222,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
         <main className="flex-1 overflow-y-auto p-4 min-h-0">
           {children}
         </main>
+        <HealthFooter />
       </div>
 
       {/* Ask panel overlay */}
