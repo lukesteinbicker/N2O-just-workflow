@@ -3,8 +3,6 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  Activity,
-  HeartPulse,
   ListTodo,
   MessageSquare,
   Network,
@@ -19,11 +17,9 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
-const nav = [
-  { href: "/streams", icon: Radio, label: "Streams" },
+export const navItems = [
   { href: "/tasks", icon: ListTodo, label: "Tasks" },
-  { href: "/activity", icon: Activity, label: "Activity" },
-  { href: "/health", icon: HeartPulse, label: "Health" },
+  { href: "/streams", icon: Radio, label: "Streams" },
   { href: "/ontology", icon: Network, label: "Ontology" },
 ] as const;
 
@@ -58,7 +54,7 @@ export function Sidebar({
 
       {/* Nav items */}
       <div className={`flex flex-col gap-0.5 ${expanded ? "px-2" : "items-center"}`}>
-        {nav.map(({ href, icon: Icon, label }) => {
+        {navItems.map(({ href, icon: Icon, label }) => {
           const active = pathname.startsWith(href);
           const baseClasses = `flex items-center rounded-md transition-colors ${
             active
