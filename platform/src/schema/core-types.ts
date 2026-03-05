@@ -81,6 +81,16 @@ export const coreTypeDefs = `#graphql
       summary: String
       metadata: String
     ): Activity!
+
+    # Task claiming/assignment
+    """Claim a pending task: sets owner, status→red, started_at→now. Fails if already claimed or has unfinished deps."""
+    claimTask(sprint: String!, taskNum: Int!, developer: String!): Task!
+
+    """Unclaim a red task: sets owner→null, status→pending, clears started_at. Only works on red tasks."""
+    unclaimTask(sprint: String!, taskNum: Int!): Task!
+
+    """Assign a task to a developer (lead operation): sets owner without status requirements."""
+    assignTask(sprint: String!, taskNum: Int!, developer: String!): Task!
   }
 
   # ── Core Entities ──────────────────────────────────────────

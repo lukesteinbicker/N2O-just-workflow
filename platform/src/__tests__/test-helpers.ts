@@ -126,13 +126,26 @@ export function seedTestData(db: Database.Database) {
  * Wraps a better-sqlite3 Database to match the SupabasePool interface.
  * Resolvers call pool.query(sql, params) — this shim translates
  * Postgres-style $1,$2 placeholders back to ? for SQLite.
+ *
+ * Handles both SELECT (returns rows) and non-SELECT statements (INSERT/UPDATE/DELETE)
+ * by detecting the statement type and using .all() vs .run() accordingly.
  */
 export function wrapDbAsPool(db: Database.Database): any {
   return {
     query(sql: string, params: any[] = []) {
       const sqliteSql = sql.replace(/\$\d+/g, "?");
-      const rows = db.prepare(sqliteSql).all(...params);
-      return Promise.resolve({ rows });
+      const trimmed = sqliteSql.trimStart().toUpperCase();
+      if (
+        trimmed.startsWith("SELECT") ||
+        trimmed.startsWith("WITH") ||
+        sqliteSql.toUpperCase().includes("RETURNING")
+      ) {
+        const rows = db.prepare(sqliteSql).all(...params);
+        return Promise.resolve({ rows });
+      } else {
+        db.prepare(sqliteSql).run(...params);
+        return Promise.resolve({ rows: [] });
+      }
     },
     end() {
       return Promise.resolve();

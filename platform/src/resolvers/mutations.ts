@@ -1,5 +1,7 @@
+import { GraphQLError } from "graphql";
 import type { Context } from "../context.js";
-import { queryOne } from "../db-adapter.js";
+import { queryOne, queryAll } from "../db-adapter.js";
+import { mapTask } from "./mappers.js";
 
 export const mutationResolvers = {
   Mutation: {
@@ -154,6 +156,128 @@ export const mutationResolvers = {
         summary: result.summary,
         metadata: result.metadata,
       };
+    },
+
+    claimTask: async (
+      _: any,
+      args: { sprint: string; taskNum: number; developer: string },
+      ctx: Context
+    ) => {
+      // Fetch the task
+      const task = await queryOne(
+        ctx.db,
+        "SELECT * FROM tasks WHERE sprint = ? AND task_num = ?",
+        [args.sprint, args.taskNum]
+      );
+      if (!task) {
+        throw new GraphQLError(`Task ${args.sprint}#${args.taskNum} not found`);
+      }
+
+      // Check if already claimed (has an owner or is not pending)
+      if (task.owner || task.status !== "pending") {
+        throw new GraphQLError(
+          `Task ${args.sprint}#${args.taskNum} is already claimed or not pending`
+        );
+      }
+
+      // Check for unfinished dependencies
+      const unfinishedDeps = await queryAll(
+        ctx.db,
+        `SELECT t.sprint, t.task_num, t.status
+         FROM task_dependencies d
+         JOIN tasks t ON t.sprint = d.depends_on_sprint AND t.task_num = d.depends_on_task
+         WHERE d.sprint = ? AND d.task_num = ? AND t.status != 'green'`,
+        [args.sprint, args.taskNum]
+      );
+      if (unfinishedDeps.length > 0) {
+        throw new GraphQLError(
+          `Task ${args.sprint}#${args.taskNum} has unfinished dependencies`
+        );
+      }
+
+      // Claim: set owner, status→red, started_at→now
+      const now = new Date().toISOString();
+      await ctx.db.query(
+        `UPDATE tasks SET owner = $1, status = 'red', started_at = $2
+         WHERE sprint = $3 AND task_num = $4`,
+        [args.developer, now, args.sprint, args.taskNum]
+      );
+
+      // Return the updated task
+      const updated = await queryOne(
+        ctx.db,
+        "SELECT * FROM tasks WHERE sprint = ? AND task_num = ?",
+        [args.sprint, args.taskNum]
+      );
+      return mapTask(updated);
+    },
+
+    unclaimTask: async (
+      _: any,
+      args: { sprint: string; taskNum: number },
+      ctx: Context
+    ) => {
+      // Fetch the task
+      const task = await queryOne(
+        ctx.db,
+        "SELECT * FROM tasks WHERE sprint = ? AND task_num = ?",
+        [args.sprint, args.taskNum]
+      );
+      if (!task) {
+        throw new GraphQLError(`Task ${args.sprint}#${args.taskNum} not found`);
+      }
+
+      // Only allow unclaiming red tasks
+      if (task.status !== "red") {
+        throw new GraphQLError(
+          `Can only unclaim red tasks (current status: ${task.status})`
+        );
+      }
+
+      // Unclaim: set owner→null, status→pending, clear started_at
+      await ctx.db.query(
+        `UPDATE tasks SET owner = NULL, status = 'pending', started_at = NULL
+         WHERE sprint = $1 AND task_num = $2`,
+        [args.sprint, args.taskNum]
+      );
+
+      // Return the updated task
+      const updated = await queryOne(
+        ctx.db,
+        "SELECT * FROM tasks WHERE sprint = ? AND task_num = ?",
+        [args.sprint, args.taskNum]
+      );
+      return mapTask(updated);
+    },
+
+    assignTask: async (
+      _: any,
+      args: { sprint: string; taskNum: number; developer: string },
+      ctx: Context
+    ) => {
+      // Fetch the task
+      const task = await queryOne(
+        ctx.db,
+        "SELECT * FROM tasks WHERE sprint = ? AND task_num = ?",
+        [args.sprint, args.taskNum]
+      );
+      if (!task) {
+        throw new GraphQLError(`Task ${args.sprint}#${args.taskNum} not found`);
+      }
+
+      // Assign: set owner (no status change requirement)
+      await ctx.db.query(
+        `UPDATE tasks SET owner = $1 WHERE sprint = $2 AND task_num = $3`,
+        [args.developer, args.sprint, args.taskNum]
+      );
+
+      // Return the updated task
+      const updated = await queryOne(
+        ctx.db,
+        "SELECT * FROM tasks WHERE sprint = ? AND task_num = ?",
+        [args.sprint, args.taskNum]
+      );
+      return mapTask(updated);
     },
   },
 };

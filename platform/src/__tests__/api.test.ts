@@ -5,17 +5,20 @@ import { resolvers } from "../resolvers/index.js";
 import {
   createTestDb,
   seedTestData,
+  wrapDbAsPool,
 } from "./test-helpers.js";
 import type { Context } from "../context.js";
 import type Database from "better-sqlite3";
 import { createLoaders } from "../loaders.js";
 
 let db: Database.Database;
+let pool: ReturnType<typeof wrapDbAsPool>;
 let server: ApolloServer<Context>;
 
 beforeAll(() => {
   db = createTestDb();
   seedTestData(db);
+  pool = wrapDbAsPool(db);
   server = new ApolloServer<Context>({ typeDefs, resolvers });
 });
 
@@ -26,7 +29,7 @@ afterAll(() => {
 function executeQuery(query: string, variables?: Record<string, any>) {
   return server.executeOperation(
     { query, variables },
-    { contextValue: { db, loaders: createLoaders(db) } }
+    { contextValue: { db: pool, loaders: createLoaders(pool) } }
   );
 }
 
@@ -576,5 +579,170 @@ describe("Nested queries", () => {
     expect(task.owner.context[0].alertness).toBeDefined();
 
     expect(task.dependencies).toHaveLength(0); // task 1 has no deps
+  });
+});
+
+// ── Task Claim/Unclaim/Assign Mutations ──────────────────────────────────
+
+describe("Task claim mutations", () => {
+  // Seed extra tasks for claim mutation tests
+  beforeAll(() => {
+    // Task 5: pending, no deps, available for claiming
+    db.prepare(
+      `INSERT INTO tasks (sprint, task_num, title, status, type, priority, horizon)
+       VALUES ('test-sprint', 5, 'Claimable task', 'pending', 'frontend', 5.0, 'active')`
+    ).run();
+
+    // Task 6: pending, depends on task 2 (which is 'red', not green) — should fail dep check
+    db.prepare(
+      `INSERT INTO tasks (sprint, task_num, title, status, type, priority, horizon)
+       VALUES ('test-sprint', 6, 'Blocked by deps', 'pending', 'frontend', 6.0, 'active')`
+    ).run();
+    db.prepare(
+      `INSERT INTO task_dependencies (sprint, task_num, depends_on_sprint, depends_on_task)
+       VALUES ('test-sprint', 6, 'test-sprint', 2)`
+    ).run();
+
+    // Task 7: red status, owned by alice — for unclaim tests
+    db.prepare(
+      `INSERT INTO tasks (sprint, task_num, title, status, type, owner, priority, horizon, started_at)
+       VALUES ('test-sprint', 7, 'Red task for unclaim', 'red', 'actions', 'alice', 7.0, 'active', '2026-02-22T14:00:00')`
+    ).run();
+
+    // Task 8: green status — unclaim should fail (not red)
+    db.prepare(
+      `INSERT INTO tasks (sprint, task_num, title, status, type, owner, priority, horizon, started_at, completed_at)
+       VALUES ('test-sprint', 8, 'Green task', 'green', 'actions', 'alice', 8.0, 'active', '2026-02-22T14:00:00', '2026-02-22T15:00:00')`
+    ).run();
+
+    // Task 9: blocked status — for assignTask regardless of status
+    db.prepare(
+      `INSERT INTO tasks (sprint, task_num, title, status, type, priority, horizon, blocked_reason)
+       VALUES ('test-sprint', 9, 'Blocked task for assign', 'blocked', 'infra', 9.0, 'active', 'Waiting on approval')`
+    ).run();
+  });
+
+  // ── claimTask ──
+
+  it("claimTask succeeds on a pending task with no unfinished deps", async () => {
+    const res = await executeQuery(`
+      mutation {
+        claimTask(sprint: "test-sprint", taskNum: 5, developer: "bob") {
+          sprint taskNum status startedAt
+          owner { name }
+        }
+      }
+    `);
+    const data = (res.body as any).singleResult.data;
+    const errors = (res.body as any).singleResult.errors;
+    expect(errors).toBeUndefined();
+    expect(data.claimTask.sprint).toBe("test-sprint");
+    expect(data.claimTask.taskNum).toBe(5);
+    expect(data.claimTask.status).toBe("red");
+    expect(data.claimTask.startedAt).toBeTruthy();
+    expect(data.claimTask.owner.name).toBe("bob");
+
+    // Verify in DB
+    const row = db
+      .prepare("SELECT * FROM tasks WHERE sprint = ? AND task_num = ?")
+      .get("test-sprint", 5) as any;
+    expect(row.owner).toBe("bob");
+    expect(row.status).toBe("red");
+    expect(row.started_at).toBeTruthy();
+  });
+
+  it("claimTask fails on an already-claimed task", async () => {
+    const res = await executeQuery(`
+      mutation {
+        claimTask(sprint: "test-sprint", taskNum: 5, developer: "alice") {
+          taskNum
+        }
+      }
+    `);
+    const errors = (res.body as any).singleResult.errors;
+    expect(errors).toBeDefined();
+    expect(errors.length).toBeGreaterThan(0);
+    expect(errors[0].message).toMatch(/already claimed/i);
+  });
+
+  it("claimTask fails on a task with unfinished dependencies", async () => {
+    const res = await executeQuery(`
+      mutation {
+        claimTask(sprint: "test-sprint", taskNum: 6, developer: "bob") {
+          taskNum
+        }
+      }
+    `);
+    const errors = (res.body as any).singleResult.errors;
+    expect(errors).toBeDefined();
+    expect(errors.length).toBeGreaterThan(0);
+    expect(errors[0].message).toMatch(/unfinished dep/i);
+  });
+
+  // ── unclaimTask ──
+
+  it("unclaimTask succeeds on a red task", async () => {
+    const res = await executeQuery(`
+      mutation {
+        unclaimTask(sprint: "test-sprint", taskNum: 7) {
+          sprint taskNum status startedAt
+          owner { name }
+        }
+      }
+    `);
+    const data = (res.body as any).singleResult.data;
+    const errors = (res.body as any).singleResult.errors;
+    expect(errors).toBeUndefined();
+    expect(data.unclaimTask.status).toBe("pending");
+    expect(data.unclaimTask.startedAt).toBeNull();
+    expect(data.unclaimTask.owner).toBeNull();
+
+    // Verify in DB
+    const row = db
+      .prepare("SELECT * FROM tasks WHERE sprint = ? AND task_num = ?")
+      .get("test-sprint", 7) as any;
+    expect(row.owner).toBeNull();
+    expect(row.status).toBe("pending");
+    expect(row.started_at).toBeNull();
+  });
+
+  it("unclaimTask fails on a non-red task", async () => {
+    const res = await executeQuery(`
+      mutation {
+        unclaimTask(sprint: "test-sprint", taskNum: 8) {
+          taskNum
+        }
+      }
+    `);
+    const errors = (res.body as any).singleResult.errors;
+    expect(errors).toBeDefined();
+    expect(errors.length).toBeGreaterThan(0);
+    expect(errors[0].message).toMatch(/only unclaim.*red/i);
+  });
+
+  // ── assignTask ──
+
+  it("assignTask succeeds regardless of status", async () => {
+    const res = await executeQuery(`
+      mutation {
+        assignTask(sprint: "test-sprint", taskNum: 9, developer: "alice") {
+          sprint taskNum status
+          owner { name }
+        }
+      }
+    `);
+    const data = (res.body as any).singleResult.data;
+    const errors = (res.body as any).singleResult.errors;
+    expect(errors).toBeUndefined();
+    expect(data.assignTask.sprint).toBe("test-sprint");
+    expect(data.assignTask.taskNum).toBe(9);
+    expect(data.assignTask.status).toBe("blocked"); // status unchanged
+    expect(data.assignTask.owner.name).toBe("alice");
+
+    // Verify in DB
+    const row = db
+      .prepare("SELECT * FROM tasks WHERE sprint = ? AND task_num = ?")
+      .get("test-sprint", 9) as any;
+    expect(row.owner).toBe("alice");
   });
 });
