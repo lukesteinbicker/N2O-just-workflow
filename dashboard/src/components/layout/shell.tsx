@@ -3,8 +3,9 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { Sidebar } from "./sidebar";
+import { FilterBar } from "./filter-bar";
 import { AskRuntimeProvider, AskContent } from "@/components/ask-panel";
-import { createChat, type ChatEntry } from "@/lib/ask/chat-store";
+import { createChat, getChat, type ChatEntry } from "@/lib/ask/chat-store";
 
 const MIN_PANEL_WIDTH = 300;
 const MAX_PANEL_WIDTH = 750;
@@ -21,6 +22,17 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
   const [chatKey, setChatKey] = useState(0);
   const [chatId, setChatId] = useState<string | null>(null);
+  const [chatTitle, setChatTitle] = useState<string>("New chat");
+
+  // Derive title from chatId whenever it changes
+  useEffect(() => {
+    if (chatId) {
+      const chat = getChat(chatId);
+      setChatTitle(chat?.title || "New chat");
+    } else {
+      setChatTitle("New chat");
+    }
+  }, [chatId]);
 
   // On /ask page, read ?chat=ID from URL
   useEffect(() => {
@@ -33,18 +45,6 @@ export function Shell({ children }: { children: React.ReactNode }) {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAskPage, searchParams]);
-
-  // Auto-create a chat entry when the panel opens (if none exists)
-  useEffect(() => {
-    if ((askOpen || isAskPage) && !chatId) {
-      const chat = createChat();
-      setChatId(chat.id);
-      if (isAskPage) {
-        router.replace(`/ask?chat=${chat.id}`, { scroll: false });
-      }
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [askOpen, isAskPage, chatId]);
 
   // If navigating to /ask, ensure askOpen is true so the provider stays mounted
   useEffect(() => {
@@ -63,6 +63,31 @@ export function Shell({ children }: { children: React.ReactNode }) {
       }
     }
   }, [isAskPage]);
+
+  // Called by ChatPersistence when a chat is lazily created on first message
+  const handleChatCreated = useCallback(
+    (id: string) => {
+      setChatId(id);
+      const chat = getChat(id);
+      if (chat) setChatTitle(chat.title);
+      if (isAskPage) {
+        router.replace(`/ask?chat=${id}`, { scroll: false });
+      }
+    },
+    [isAskPage, router]
+  );
+
+  // Refresh title periodically when chat is active (picks up persistence updates)
+  useEffect(() => {
+    if (!chatId) return;
+    const interval = setInterval(() => {
+      const chat = getChat(chatId);
+      if (chat && chat.title !== chatTitle) {
+        setChatTitle(chat.title);
+      }
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [chatId, chatTitle]);
 
   // ── Drag resize ──────────────────────────────────
   const isDragging = useRef(false);
@@ -134,6 +159,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const handleNewChat = useCallback(() => {
     const chat = createChat();
     setChatId(chat.id);
+    setChatTitle("New chat");
     setChatKey((k) => k + 1);
     if (isAskPage) {
       router.replace(`/ask?chat=${chat.id}`, { scroll: false });
@@ -144,6 +170,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const handleSelectChat = useCallback(
     (chat: ChatEntry) => {
       setChatId(chat.id);
+      setChatTitle(chat.title);
       setChatKey((k) => k + 1);
       if (isAskPage) {
         router.replace(`/ask?chat=${chat.id}`, { scroll: false });
@@ -155,19 +182,23 @@ export function Shell({ children }: { children: React.ReactNode }) {
   // Show the ask UI? Either as panel (non-/ask pages) or fullscreen (/ask page)
   const showAsk = askOpen || isAskPage;
 
-  // On /ask page, render fullscreen mode with no sidebar/main
+  // Shared AskContent props
+  const askContentProps = {
+    chatTitle,
+    onClose: handleClose,
+    onNewChat: handleNewChat,
+    onSelectChat: handleSelectChat,
+    onFullscreen: isAskPage ? () => {} : handleFullscreen,
+    onMinimize: isAskPage ? handleMinimize : handleClose,
+  };
+
+  // On /ask page, render fullscreen mode with no sidebar/main.
+  // ONE AskRuntimeProvider wraps the content — no remounting on mode switch.
   if (isAskPage) {
     return (
-      <AskRuntimeProvider key={chatKey} chatId={chatId}>
+      <AskRuntimeProvider key={chatKey} chatId={chatId} onChatCreated={handleChatCreated}>
         <div className="flex h-screen w-full flex-col">
-          <AskContent
-            mode="fullscreen"
-            onClose={handleClose}
-            onNewChat={handleNewChat}
-            onSelectChat={handleSelectChat}
-            onFullscreen={() => {}}
-            onMinimize={handleMinimize}
-          />
+          <AskContent mode="fullscreen" {...askContentProps} />
         </div>
       </AskRuntimeProvider>
     );
@@ -180,14 +211,17 @@ export function Shell({ children }: { children: React.ReactNode }) {
         expanded={sidebarExpanded}
         onToggleExpanded={() => setSidebarExpanded((e) => !e)}
       />
-      <main
-        className="flex-1 overflow-y-auto p-4 min-h-0"
+      <div
+        className="flex flex-1 flex-col min-h-0"
         style={{
-          marginRight: showAsk && !isAskPage ? `${panelWidth}px` : "0px",
+          marginRight: showAsk ? `${panelWidth}px` : "0px",
         }}
       >
-        {children}
-      </main>
+        <FilterBar />
+        <main className="flex-1 overflow-y-auto p-4 min-h-0">
+          {children}
+        </main>
+      </div>
 
       {/* Ask panel overlay */}
       {showAsk && (
@@ -201,15 +235,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
             className="w-1 cursor-col-resize hover:bg-primary/30 active:bg-primary/50 transition-colors flex-shrink-0"
           />
           <div className="flex-1 min-w-0 min-h-0">
-            <AskRuntimeProvider key={chatKey} chatId={chatId}>
-              <AskContent
-                mode="panel"
-                onClose={handleClose}
-                onNewChat={handleNewChat}
-                onSelectChat={handleSelectChat}
-                onFullscreen={handleFullscreen}
-                onMinimize={handleClose}
-              />
+            <AskRuntimeProvider key={chatKey} chatId={chatId} onChatCreated={handleChatCreated}>
+              <AskContent mode="panel" {...askContentProps} />
             </AskRuntimeProvider>
           </div>
         </div>
