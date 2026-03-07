@@ -17,15 +17,14 @@ import { DATA_HEALTH_QUERY } from "@/lib/graphql/queries";
 import { parseSchemaToGraph, aggregateEdges, type IntrospectionType } from "./schema-parser";
 import { getHealthStatus, STREAM_ENTITY_MAP } from "./health-status";
 import { graphqlAdapter, INTROSPECTION_QUERY } from "./graphql-adapter";
+import { postgresqlAdapter } from "./postgresql-adapter";
+import { parseSqlSchema } from "./sql-parser";
 import { createCanvasCallbacks, COLORS, type EnrichedNode, type ForceLink } from "./ontology-canvas";
 import { CategorySidebar } from "./category-sidebar";
 import { DetailPanel } from "./detail-panel";
 import { TypeCardGrid } from "./type-card-grid";
 
 const ForceGraph2D = dynamic(() => import("react-force-graph-2d"), { ssr: false });
-
-const adapter = graphqlAdapter;
-const CATEGORY_CONFIG = adapter.getCategoryConfig();
 
 export default function OntologyPage() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -38,6 +37,12 @@ export default function OntologyPage() {
   const [hoveredLink, setHoveredLink] = useState<ForceLink | null>(null);
   const [viewMode, setViewMode] = useState<"list" | "graph">("graph");
   const [activeCategoryFilter, setActiveCategoryFilter] = useState<string | null>(null);
+  const [activeAdapter, setActiveAdapter] = useState<"graphql" | "sql">("graphql");
+  const [sqlContent, setSqlContent] = useState("");
+  const [showSqlInput, setShowSqlInput] = useState(false);
+
+  const adapter = activeAdapter === "graphql" ? graphqlAdapter : postgresqlAdapter;
+  const CATEGORY_CONFIG = adapter.getCategoryConfig();
 
   useEffect(() => {
     const el = graphContainerRef.current;
@@ -49,15 +54,26 @@ export default function OntologyPage() {
     return () => observer.disconnect();
   }, []);
 
+  const isSqlMode = activeAdapter === "sql";
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: schemaData, loading: schemaLoading, error: schemaError } = useQuery<any>(INTROSPECTION_QUERY);
+  const { data: schemaData, loading: schemaLoading, error: schemaError } = useQuery<any>(INTROSPECTION_QUERY, { skip: isSqlMode });
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: healthData } = useQuery<any>(DATA_HEALTH_QUERY, { pollInterval: 30000 });
+  const { data: healthData } = useQuery<any>(DATA_HEALTH_QUERY, { skip: isSqlMode, pollInterval: 30000 });
+
+  const sqlParseResult = useMemo(() => {
+    if (!isSqlMode || !sqlContent.trim()) return null;
+    return parseSqlSchema(sqlContent);
+  }, [isSqlMode, sqlContent]);
 
   const graphData = useMemo(() => {
+    if (isSqlMode) {
+      if (!sqlParseResult) return null;
+      return parseSchemaToGraph(sqlParseResult.types);
+    }
     if (!schemaData?.__schema?.types) return null;
     return parseSchemaToGraph(schemaData.__schema.types as IntrospectionType[]);
-  }, [schemaData]);
+  }, [isSqlMode, sqlParseResult, schemaData]);
 
   const healthMap = useMemo(() => {
     return getHealthStatus(healthData?.dataHealth?.streams ?? [], healthData?.dataHealth?.lastSessionEndedAt ?? null, STREAM_ENTITY_MAP);
@@ -65,8 +81,13 @@ export default function OntologyPage() {
 
   const enrichedNodes = useMemo<EnrichedNode[]>(() => {
     if (!graphData) return [];
-    return graphData.nodes.map((n) => ({ ...n, healthStatus: healthMap[n.id] ?? null, category: adapter.getCategoryForType(n.id) }));
-  }, [graphData, healthMap]);
+    return graphData.nodes.map((n) => ({
+      ...n,
+      healthStatus: isSqlMode ? null : (healthMap[n.id] ?? null),
+      category: adapter.getCategoryForType(n.id),
+      pgMetadata: isSqlMode ? sqlParseResult?.metadata.get(n.id) : undefined,
+    }));
+  }, [graphData, healthMap, isSqlMode, adapter, sqlParseResult]);
 
   const categoryGroups = useMemo(() => {
     const groups: Record<string, EnrichedNode[]> = {};
@@ -121,17 +142,18 @@ export default function OntologyPage() {
   }, [panelOpen, viewMode]);
 
   const entityConfig = selectedNode ? adapter.getEntityColumns(selectedNode.id) : undefined;
+  const entityQuery = entityConfig?.query;
+  const hasDocumentNodeQuery = entityQuery != null && typeof entityQuery !== "string";
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: entityData } = useQuery<any>(entityConfig?.query ?? INTROSPECTION_QUERY, { skip: !entityConfig });
+  const { data: entityData } = useQuery<any>(hasDocumentNodeQuery ? entityQuery : INTROSPECTION_QUERY, { skip: !hasDocumentNodeQuery });
   const recentRecords = useMemo(() => {
     if (!entityConfig || !entityData) return [];
     const records = entityData[entityConfig.field];
     return Array.isArray(records) ? records.slice(0, 8) : [];
   }, [entityConfig, entityData]);
 
-  if (schemaLoading) return <div className="flex h-full items-center justify-center"><div className="text-sm text-muted-foreground">Loading schema...</div></div>;
-  if (schemaError) return <div className="flex h-full items-center justify-center"><div className="rounded-md border border-[#CD4246]/30 bg-[#CD4246]/10 p-4 text-sm text-[#CD4246]">Failed to load schema: {schemaError.message}</div></div>;
-  if (!graphData || graphData.nodes.length === 0) return <div className="flex h-full items-center justify-center"><div className="text-sm text-muted-foreground">No entity types found in schema.</div></div>;
+  if (!isSqlMode && schemaLoading) return <div className="flex h-full items-center justify-center"><div className="text-sm text-muted-foreground">Loading schema...</div></div>;
+  if (!isSqlMode && schemaError) return <div className="flex h-full items-center justify-center"><div className="rounded-md border border-[#CD4246]/30 bg-[#CD4246]/10 p-4 text-sm text-[#CD4246]">Failed to load schema: {schemaError.message}</div></div>;
 
   return (
     <div className="relative h-full w-full">
@@ -152,8 +174,25 @@ export default function OntologyPage() {
         <div className="h-[44px] border-b border-border px-4 flex items-center justify-between flex-shrink-0 bg-card">
           <div className="flex items-center gap-3">
             <h1 className="text-sm font-semibold text-foreground">Ontology Explorer</h1>
+
+            {/* Adapter selector */}
+            <select
+              value={activeAdapter}
+              onChange={(e) => {
+                const next = e.target.value as "graphql" | "sql";
+                setActiveAdapter(next);
+                setSelectedNode(null);
+                setActiveCategoryFilter(null);
+                if (next === "sql") setShowSqlInput(true);
+              }}
+              className="h-7 rounded border border-border bg-background px-2 text-xs text-foreground"
+            >
+              <option value="graphql">GraphQL</option>
+              <option value="sql">SQL</option>
+            </select>
+
             <span className="text-xs text-muted-foreground">{filteredNodes.length} types</span>
-            {activeCategoryFilter && (
+            {activeCategoryFilter && CATEGORY_CONFIG[activeCategoryFilter] && (
               <button
                 onClick={() => setActiveCategoryFilter(null)}
                 className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors"
@@ -180,8 +219,65 @@ export default function OntologyPage() {
           </div>
         </div>
 
+        {/* SQL paste input */}
+        {isSqlMode && showSqlInput && (
+          <div className="border-b border-border bg-card px-4 py-3 flex-shrink-0">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                Paste SQL Schema
+              </span>
+              <div className="flex items-center gap-2">
+                {sqlContent.trim() && (
+                  <button
+                    onClick={() => setShowSqlInput(false)}
+                    className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    Collapse
+                  </button>
+                )}
+              </div>
+            </div>
+            <textarea
+              value={sqlContent}
+              onChange={(e) => setSqlContent(e.target.value)}
+              placeholder="Paste CREATE TABLE, CREATE INDEX, ALTER TABLE, CREATE POLICY statements..."
+              className="w-full h-32 rounded border border-border bg-background p-2 text-xs font-mono text-foreground resize-y placeholder:text-muted-foreground/50"
+            />
+          </div>
+        )}
+
+        {/* Collapsed SQL input toggle */}
+        {isSqlMode && !showSqlInput && sqlContent.trim() && (
+          <div className="border-b border-border bg-card px-4 py-1.5 flex-shrink-0">
+            <button
+              onClick={() => setShowSqlInput(true)}
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Edit SQL input ({sqlParseResult?.types.length ?? 0} tables parsed)
+            </button>
+          </div>
+        )}
+
+        {/* Empty state for SQL mode */}
+        {isSqlMode && !sqlContent.trim() && !showSqlInput && (
+          <div className="flex-1 flex items-center justify-center">
+            <button
+              onClick={() => setShowSqlInput(true)}
+              className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Paste SQL to get started
+            </button>
+          </div>
+        )}
+
         <div ref={graphContainerRef} className="flex-1 relative overflow-hidden" style={{ backgroundColor: viewMode === "graph" ? COLORS.bg : undefined }}>
-          {viewMode === "list" ? (
+          {(!graphData || graphData.nodes.length === 0) ? (
+            <div className="flex h-full items-center justify-center">
+              <div className="text-sm text-muted-foreground">
+                {isSqlMode ? "Paste SQL above to visualize your schema." : "No entity types found in schema."}
+              </div>
+            </div>
+          ) : viewMode === "list" ? (
             <TypeCardGrid
               nodes={filteredNodes}
               enrichedNodes={enrichedNodes}
@@ -234,17 +330,19 @@ export default function OntologyPage() {
                   </button>
                 ))}
               </div>
-              <div className="absolute right-4 bottom-4 z-10 rounded-md border border-border bg-card px-3 py-2 text-xs text-muted-foreground">
-                <div className="mb-1.5 font-medium text-foreground">Health</div>
-                <div className="flex flex-col gap-1">
-                  {[{ color: COLORS.healthGreen, label: "Fresh" }, { color: COLORS.healthYellow, label: "Stale" }, { color: COLORS.healthRed, label: "Very stale" }].map(({ color, label }) => (
-                    <div key={label} className="flex items-center gap-2">
-                      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: color }} />
-                      <span>{label}</span>
-                    </div>
-                  ))}
+              {!isSqlMode && (
+                <div className="absolute right-4 bottom-4 z-10 rounded-md border border-border bg-card px-3 py-2 text-xs text-muted-foreground">
+                  <div className="mb-1.5 font-medium text-foreground">Health</div>
+                  <div className="flex flex-col gap-1">
+                    {[{ color: COLORS.healthGreen, label: "Fresh" }, { color: COLORS.healthYellow, label: "Stale" }, { color: COLORS.healthRed, label: "Very stale" }].map(({ color, label }) => (
+                      <div key={label} className="flex items-center gap-2">
+                        <span className="h-2 w-2 rounded-full" style={{ backgroundColor: color }} />
+                        <span>{label}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
             </>
           )}
         </div>

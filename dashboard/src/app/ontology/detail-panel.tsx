@@ -4,9 +4,10 @@
  */
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { X } from "lucide-react";
+import { X, ChevronDown, ChevronRight } from "lucide-react";
 import type { CategoryConfigEntry, EntityColumnsConfig } from "./schema-adapter";
 import { COLORS, type EnrichedNode } from "./ontology-canvas";
+import type { PgConstraint, PgIndex, PgRlsPolicy } from "./pg-types";
 
 export interface DetailPanelProps {
   selectedNode: EnrichedNode;
@@ -246,6 +247,11 @@ export function DetailPanel({
             </div>
           )}
 
+          {/* PostgreSQL metadata sections */}
+          {selectedNode.pgMetadata && (
+            <PgMetadataSections pgMetadata={selectedNode.pgMetadata} />
+          )}
+
           {/* Recent records */}
           {entityConfig && recentRecords.length > 0 && (
             <div>
@@ -297,5 +303,139 @@ export function DetailPanel({
         </div>
       </div>
     </div>
+  );
+}
+
+// ── PostgreSQL metadata sections ────────────────────────
+
+function CollapsibleSection({ title, count, children }: { title: string; count: number; children: React.ReactNode }) {
+  const [open, setOpen] = useState(true);
+  if (count === 0) return null;
+  return (
+    <div>
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-1.5 w-full text-left"
+      >
+        {open ? <ChevronDown size={12} className="text-muted-foreground" /> : <ChevronRight size={12} className="text-muted-foreground" />}
+        <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+          {title}
+        </h3>
+        <span className="text-[10px] text-muted-foreground">({count})</span>
+      </button>
+      {open && <div className="mt-2">{children}</div>}
+    </div>
+  );
+}
+
+function ConstraintBadge({ type }: { type: PgConstraint["type"] }) {
+  const colors: Record<string, string> = {
+    "PRIMARY KEY": "#2D72D2",
+    "FOREIGN KEY": "#29A634",
+    "UNIQUE": "#EC9A3C",
+    "CHECK": "#9F2B68",
+    "NOT NULL": "#738694",
+  };
+  const color = colors[type] ?? "#738694";
+  return (
+    <span
+      className="rounded px-1 py-0.5 text-[10px] font-medium"
+      style={{ backgroundColor: color + "20", color }}
+    >
+      {type}
+    </span>
+  );
+}
+
+function PgMetadataSections({ pgMetadata }: { pgMetadata: NonNullable<EnrichedNode["pgMetadata"]> }) {
+  const visibleConstraints = pgMetadata.constraints.filter((c) => c.type !== "NOT NULL");
+
+  return (
+    <>
+      {/* Constraints */}
+      <CollapsibleSection title="Constraints" count={visibleConstraints.length}>
+        <div className="space-y-1">
+          {visibleConstraints.map((c, i) => (
+            <div key={i} className="flex items-start gap-2 rounded px-2 py-1 text-xs hover:bg-background">
+              <ConstraintBadge type={c.type} />
+              <div className="flex-1 min-w-0">
+                <span className="font-mono text-foreground">
+                  {c.columns.join(", ")}
+                </span>
+                {c.references && (
+                  <span className="text-muted-foreground">
+                    {" → "}{c.references.table}({c.references.columns.join(", ")})
+                  </span>
+                )}
+                {c.expression && (
+                  <span className="text-muted-foreground block font-mono text-[10px] mt-0.5">
+                    {c.expression}
+                  </span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </CollapsibleSection>
+
+      {/* Indexes */}
+      <CollapsibleSection title="Indexes" count={pgMetadata.indexes.length}>
+        <div className="space-y-1">
+          {pgMetadata.indexes.map((idx, i) => (
+            <div key={i} className="flex items-start gap-2 rounded px-2 py-1 text-xs hover:bg-background">
+              <div className="flex gap-1">
+                {idx.unique && (
+                  <span className="rounded px-1 py-0.5 text-[10px] font-medium bg-[#EC9A3C]/20 text-[#EC9A3C]">
+                    UNIQUE
+                  </span>
+                )}
+                {idx.type && (
+                  <span className="rounded px-1 py-0.5 text-[10px] font-medium bg-[#394048]/50 text-muted-foreground">
+                    {idx.type}
+                  </span>
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <span className="font-mono text-foreground">{idx.columns.join(", ")}</span>
+                <span className="text-muted-foreground ml-1.5 text-[10px]">{idx.name}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </CollapsibleSection>
+
+      {/* RLS Policies */}
+      <CollapsibleSection title="RLS Policies" count={pgMetadata.rlsPolicies.length}>
+        {pgMetadata.rlsEnabled && (
+          <div className="mb-2">
+            <span className="rounded px-1.5 py-0.5 text-[10px] font-medium bg-[#238551]/20 text-[#238551]">
+              RLS ENABLED
+            </span>
+          </div>
+        )}
+        <div className="space-y-2">
+          {pgMetadata.rlsPolicies.map((policy, i) => (
+            <div key={i} className="rounded border border-border px-2 py-1.5 text-xs">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="font-medium text-foreground">{policy.name}</span>
+                <span className="rounded px-1 py-0.5 text-[10px] font-medium bg-[#394048]/50 text-muted-foreground">
+                  {policy.command}
+                </span>
+              </div>
+              {policy.using && (
+                <div className="text-[10px] text-muted-foreground font-mono mt-1">
+                  <span className="text-foreground/60">USING</span> {policy.using}
+                </div>
+              )}
+              {policy.withCheck && (
+                <div className="text-[10px] text-muted-foreground font-mono mt-0.5">
+                  <span className="text-foreground/60">WITH CHECK</span> {policy.withCheck}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </CollapsibleSection>
+    </>
   );
 }
