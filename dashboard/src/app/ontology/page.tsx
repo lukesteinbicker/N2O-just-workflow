@@ -111,6 +111,15 @@ export default function OntologyPage() {
     graphRef.current.d3Force("link")?.distance(120);
   }, [forceGraphData]);
 
+  // Re-fit graph when detail panel opens/closes (container width changes)
+  const panelOpen = selectedNode !== null;
+  useEffect(() => {
+    if (graphRef.current && viewMode === "graph") {
+      const timer = setTimeout(() => graphRef.current?.zoomToFit(300, 80), 150);
+      return () => clearTimeout(timer);
+    }
+  }, [panelOpen, viewMode]);
+
   const entityConfig = selectedNode ? adapter.getEntityColumns(selectedNode.id) : undefined;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: entityData } = useQuery<any>(entityConfig?.query ?? INTROSPECTION_QUERY, { skip: !entityConfig });

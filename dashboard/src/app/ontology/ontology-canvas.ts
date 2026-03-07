@@ -131,7 +131,7 @@ export function createCanvasCallbacks(input: CanvasCallbackInput) {
   };
 
   const handleZoomFit = () => {
-    if (graphRef.current) graphRef.current.zoomToFit(400, 40);
+    if (graphRef.current) graphRef.current.zoomToFit(400, 80);
   };
 
   const handleUnpinAll = () => {
