@@ -8,7 +8,9 @@ This is the N2O workflow framework source repo. Skills live at their source path
 - `/bug-workflow` — `02-agents/bug-workflow/SKILL.md`
 - `/react-best-practices` — `03-patterns/react-best-practices/SKILL.md`
 - `/code-health` — `02-agents/code-health/SKILL.md`
+- `/frontend-review` — `02-agents/frontend-review/SKILL.md`
 - `/web-design-guidelines` — `03-patterns/web-design-guidelines/SKILL.md`
+- `/ux-heuristics` — `03-patterns/ux-heuristics/SKILL.md`
 
 Task database schema: `.pm/schema.sql`
 Sync CLI: `./n2o`

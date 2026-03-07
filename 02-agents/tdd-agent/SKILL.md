@@ -424,6 +424,17 @@ sqlite3 .pm/tasks.db "UPDATE tasks SET status = 'green' WHERE id = TASK_ID;"
 sqlite3 .pm/tasks.db "INSERT INTO workflow_events (sprint, task_num, event_type, skill_name, phase, session_id) VALUES ('${sprint}', ${taskNum}, 'phase_entered', 'tdd-agent', 'GREEN', '$(echo $CLAUDE_SESSION_ID)');"
 ```
 
+### Frontend Review (after GREEN for frontend tasks)
+
+If the task has `type: frontend`, invoke `/frontend-review` on the affected page after reaching GREEN.
+
+**Prerequisites check** (verify before invoking):
+1. Dev server running at configured port — if not, warn: `"⚠️ Dev server not running. Start it with '{dev_server_command}' before frontend review can run."`
+2. `@playwright/test` and `@axe-core/playwright` in `package.json` — if missing, warn: `"⚠️ Playwright not installed. Run: npm install -D @playwright/test @axe-core/playwright && npx playwright install chromium"`
+3. `.claude/review-config.json` exists — if missing, warn: `"⚠️ No review config found. Copy from templates/review-config.json.example to .claude/review-config.json"`
+
+If any prerequisite fails, **log the specific warning** and continue to REFACTOR. Do not silently skip.
+
 ### Important Constraints
 
 - ❌ Don't optimize or add features beyond the task

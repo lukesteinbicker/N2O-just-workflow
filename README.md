@@ -4,21 +4,29 @@ A multi-agent development system that coordinates planning, implementation, and 
 through a shared SQLite task database. Achieves 4-5x productivity gains — see
 [BENEFITS.md](./BENEFITS.md) for why N2O is investing in this.
 
-## The Three Agents
+## Agents
 
 | Agent | Purpose | Invoke |
 |-------|---------|--------|
 | **pm-agent** | Sprint planning, spec writing, task breakdown | `/pm-agent` |
 | **tdd-agent** | TDD implementation with automated auditing | `/tdd-agent` |
 | **bug-workflow** | Root cause investigation and debugging | `/bug-workflow` |
+| **frontend-review** | Multi-agent UI quality review (programmatic + vision + interaction) | `/frontend-review` |
+| **code-health** | Codebase quality audit (file length, dead exports, circular deps) | `/code-health` |
+
+**Pattern skills** (consulted automatically during relevant work):
+- `/react-best-practices` — React/Next.js performance patterns
+- `/web-design-guidelines` — UI accessibility and design patterns
+- `/ux-heuristics` — 29 principle-based UX heuristic rules
 
 ## Repository Structure
 
 | Directory | What's in it |
 |-----------|-------------|
 | [`01-getting-started/`](./01-getting-started/) | Overview, workflow, quickstart, setup |
-| [`02-agents/`](./02-agents/) | Agent skill definitions (pm, tdd, bug) |
-| [`03-patterns/`](./03-patterns/) | Coding standards (React, web design) |
+| [`02-agents/`](./02-agents/) | Agent skill definitions (pm, tdd, bug, frontend-review, code-health) |
+| [`03-patterns/`](./03-patterns/) | Coding standards (React, web design, UX heuristics) |
+| [`templates/`](./templates/) | Project templates, config examples, Storybook setup |
 | [`scripts/`](./scripts/) | Git commit automation |
 | [`.pm/`](./.pm/) | SQLite schema, sprint specs, task seeds |
 | [`specs/`](./specs/) | Product specifications |

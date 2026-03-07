@@ -84,7 +84,31 @@ The agent guides you through each phase. When done, it marks the task complete a
 
 ---
 
-## 8. Check Your Stats
+## 8. Frontend Review (for UI work)
+
+If your task has `type: frontend`, the tdd-agent automatically runs `/frontend-review` after your code reaches GREEN. This requires:
+
+- **Playwright**: `npm install -D @playwright/test @axe-core/playwright && npx playwright install chromium`
+- **Dev server running**: The review agent navigates to your page in a real browser
+- **Config** (optional): Copy `<framework-path>/templates/review-config.json.example` to `.claude/review-config.json` and customize
+
+First review of any page runs in **report-only mode** — it assesses but doesn't auto-fix, so you can review findings and add suppressions for intentional design choices.
+
+See `templates/frontend-review-quickstart.md` for the full setup guide.
+
+### Storybook (optional, recommended)
+
+Storybook enables component-level screenshot baselines during frontend review. To set up:
+
+1. Run `npx storybook@latest init`
+2. Run `/detect-project` to auto-generate stories for your components
+3. See `templates/storybook-setup/CHECKLIST.md` for the full checklist
+
+Without Storybook, frontend review still works — it skips component baselines and uses DOM assertions instead.
+
+---
+
+## 9. Check Your Stats
 
 After completing at least one task:
 
@@ -101,7 +125,7 @@ For JSON output (used by the dashboard):
 
 ---
 
-## 9. Multi-Machine Setup (Optional)
+## 10. Multi-Machine Setup (Optional)
 
 For multi-machine or team-wide task sync, set `SUPABASE_URL` and `SUPABASE_KEY` environment variables. Then `n2o sync` pushes/pulls task state automatically.
 

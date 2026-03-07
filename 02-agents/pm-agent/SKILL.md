@@ -38,7 +38,8 @@ To set up: `claude mcp add --transport sse linear-server https://mcp.linear.app/
 | 1 | Ideation | Capture in `.wm/` or `backlog/` |
 | 1.5 | Audit Code | Check what exists before speccing |
 | 2 | Refinement | Write specs in `todo/` |
-| **2.5** | **Pre-Task Checklist** | **Audit → Patterns → MECE → Verify** |
+| **2.5** | **Pre-Task Checklist** | **Audit → Patterns → MECE** |
+| **2.75** | **Adversarial Review** | **Stress-test design → user decides → update spec** |
 | 3 | Sprint Planning | Break into tasks → SQLite |
 | **3.5** | **Post-Load Audit** | **Dependencies → Orphans → Cycles → Coverage** |
 | **4** | **Start Implementation** | **Begin tasks with `/tdd-agent`** |
@@ -52,10 +53,10 @@ To set up: `claude mcp add --transport sse linear-server https://mcp.linear.app/
 ## Workflow (Planning Agent)
 
 ```
-.wm/ (scratch) → backlog/ (idea) → todo/ (spec) → VERIFY → tasks.db → AUDIT → generate dev prompt
-                                         ↑                      ↑              ↓
-                                   Pre-Task Checklist    Post-Load Audit    dev agents
-                                   (patterns, MECE)      (deps, orphans)    (tdd-agent)
+.wm/ (scratch) → backlog/ (idea) → todo/ (spec) → VERIFY → ADVERSARIAL → tasks.db → AUDIT → dev agents
+                                         ↑              ↑              ↑              ↓
+                                   Pre-Task Checklist  Adversarial  Post-Load Audit  tdd-agent
+                                   (patterns, MECE)    Review        (deps, orphans)
 ```
 
 **Dev agents** then implement tasks in parallel using `tdd-agent` skill.
@@ -65,7 +66,8 @@ To set up: `claude mcp add --transport sse linear-server https://mcp.linear.app/
 | **Scratch** | `.wm/` | Transitory brainstorming, context dumps |
 | **Backlog** | `.pm/backlog/**/*.md` | Raw ideas, someday items |
 | **Todo** | `.pm/todo/**/*.md` | Active sprint specs |
-| **Pre-Verify** | Pre-Task Checklist | Audit, patterns, MECE, user approval |
+| **Pre-Verify** | Pre-Task Checklist | Audit, patterns, MECE |
+| **Adversarial** | User review | Stress-test design, resolve ambiguity |
 | **Tasks** | `.pm/tasks.db` | Executable work items |
 | **Post-Verify** | Post-Load Audit | Dependencies, orphans, cycles, coverage |
 | **Dev Agents** | Separate tabs | Execute tasks using `tdd-agent` |
@@ -420,10 +422,10 @@ sqlite3 .pm/tasks.db "INSERT INTO workflow_events (sprint, task_num, event_type,
     - No overlaps between specs
     - Cross-refs for out-of-scope items
 
-□ 4. VERIFY WITH USER
+□ 4. SCOPE CHECK WITH USER
     - Task count reasonable? (50-100 ideal, flexible)
-    - Scope approved?
-    - Ready to load?
+    - Any obvious gaps or concerns before adversarial review?
+    - Proceed to Phase 2.75 (Adversarial Review)
 ```
 
 ### Task Quality Checks
@@ -510,13 +512,61 @@ These are a linear sequence with no branching. One task.
 
 ---
 
+## Phase 2.75: Adversarial Review
+
+```bash
+sqlite3 .pm/tasks.db "INSERT INTO workflow_events (sprint, task_num, event_type, skill_name, phase, session_id) VALUES ('${sprint}', ${taskNum}, 'phase_entered', 'pm-agent', 'ADVERSARIAL_REVIEW', '$(echo $CLAUDE_SESSION_ID)');"
+```
+
+**Trigger**: Pre-Task Checklist (2.5) complete. Spec written, code audited, patterns checked, MECE verified. Design has NOT yet been broken into tasks.
+
+**Purpose**: Stress-test the spec's design decisions, data model, edge cases, and assumptions before committing to a task breakdown. It's 10x cheaper to find a design flaw here than during implementation.
+
+### Two-Agent Pipeline
+
+Uses two sequential subagents. Detailed prompts are in `templates/adversarial-review.md`.
+
+**Agent 1 — Question Generator**: Reads the spec, schema, and audit context. Generates 8-15 adversarial questions covering categories relevant to the spec (state transitions, race conditions, edge cases, failure modes, data integrity, etc.). Each question includes 2-4 options with a recommended choice and schema/spec impact notes.
+
+**Agent 2 — Review & Present**: Reviews Agent 1's output. Challenges recommendations, adds implementation notes to each option, flags low-value questions as SKIP, adds 1-2 missed questions if needed. Then reorders surviving questions: groups by theme, foundational decisions first, leaf decisions last. Produces the final formatted review.
+
+### Presenting to User
+
+Present the full adversarial review. The format allows rapid responses:
+
+```
+User: "1A, 2B, 3A, 4C, 5A, 6A, 7A, 8B"
+```
+
+### Processing Decisions
+
+After the user responds:
+
+1. **Parse responses** — map each answer to the chosen option
+2. **Update the spec's Open Questions section** — record each decision as a resolved question:
+   ```
+   ~~Q: {adversarial question}~~ **Resolved**: {chosen option + rationale}
+   ```
+3. **Apply schema changes** required by the chosen options
+4. **Summarize changes** — tell the user what was updated
+5. **Get explicit approval** — "Spec updated with adversarial decisions. Ready to create tasks?"
+6. **Proceed to Phase 3** (Sprint Planning) only after user confirms
+
+### When to Re-Run
+
+- Spec changes significantly after the review (new major section or redesigned data model)
+- New external dependency or constraint discovered
+- User requests it explicitly
+
+---
+
 ## Phase 3: Sprint Planning
 
 ```bash
 sqlite3 .pm/tasks.db "INSERT INTO workflow_events (sprint, task_num, event_type, skill_name, phase, session_id) VALUES ('${sprint}', ${taskNum}, 'phase_entered', 'pm-agent', 'SPRINT_PLANNING', '$(echo $CLAUDE_SESSION_ID)');"
 ```
 
-**Trigger**: Starting new sprint (after Pre-Task Checklist passes)
+**Trigger**: Starting new sprint (after Pre-Task Checklist + Adversarial Review complete, user approved)
 
 **Actions**:
 1. Pick spec(s) from `todo/` — multiple specs per sprint is normal
@@ -559,7 +609,7 @@ INSERT INTO task_dependencies (sprint, task_num, depends_on_sprint, depends_on_t
 - `sprint`: Sprint name (e.g., `'crm-foundation'`)
 - `spec`: Spec file name (e.g., `'01-deals-pipeline.md'`)
 - `task_num`: Sequential number within sprint (1, 2, 3...)
-- `type`: Task layer — one of: `database`, `actions`, `frontend`, `infra`, `agent`, `e2e`, `docs`
+- `type`: Task layer — one of: `database`, `actions`, `frontend`, `infra`, `agent`, `e2e`, `docs`. See "Task Type Guide" below
 - `owner`: Engineer assigned (e.g., `'ada'`, `'adam'`)
 - `skills`: Comma-separated skills to invoke (e.g., `'database'`, `'server-actions, tanstack-hooks'`)
 - `estimated_minutes`: PM's time estimate in minutes — set at planning time, **never adjusted after work starts**
@@ -575,6 +625,22 @@ INSERT INTO task_dependencies (sprint, task_num, depends_on_sprint, depends_on_t
 - **medium** — Some integration, well-documented APIs, moderate scope
 - **high** — Unstable APIs, cross-service coordination, novel technology, unclear requirements
 - **unknown** — Genuinely can't assess. Use sparingly — try to classify as low/medium/high first
+
+### Task Type Guide
+
+The `type` field determines which automated checks run during implementation:
+
+| Type | What triggers automatically | Use when |
+|------|---------------------------|----------|
+| `database` | Database-specific audit patterns | Migrations, RLS policies, schema changes |
+| `actions` | Server action patterns | Server actions, API handlers, business logic |
+| `frontend` | **`/frontend-review` runs after GREEN** | UI components, pages, layouts, styling, anything the user sees |
+| `infra` | Infrastructure audit | CI/CD, deployment, config, tooling |
+| `agent` | Agent-specific patterns | AI agent definitions, prompts, tools |
+| `e2e` | E2E-specific audit (single subagent) | End-to-end test specs |
+| `docs` | No automated checks | Documentation, READMEs, guides |
+
+**Important**: `type: frontend` triggers the multi-agent frontend review (programmatic + vision + interaction). If a task touches UI, set `type: frontend` so the review runs automatically. Tasks that only touch backend logic (even if they affect what the frontend displays) should use `actions` or `database`.
 
 ### Task Description Standard
 
@@ -993,7 +1059,11 @@ sqlite3 .pm/tasks.db "
 # Check all specs have "Status: Done" with conclusions
 ```
 
-### 2. Sprint Verification (verify-agent)
+### 2. Frontend Review (if UI-heavy sprint)
+
+If any sprint task has `type: frontend` or modifies component/page files, run `/frontend-review` on affected pages before verify-agent. The frontend review agent reads the JSON report's `status` field — `pass` means the page is cleared, `fail` or `max_iterations` means issues remain.
+
+### 3. Sprint Verification (verify-agent)
 
 **User spins up a verify-agent agent** to run:
 1. **E2E Tests** - functional correctness, diagnose failures via screenshots
@@ -1005,7 +1075,7 @@ sqlite3 .pm/tasks.db "
 
 **If verify-agent escalates to bug-workflow**: bug-workflow investigates with temp E2E tests + console capture + database queries, returns findings, verify-agent continues.
 
-### 3. Handle Issues Found
+### 4. Handle Issues Found
 
 If issues found during verification:
 
@@ -1019,7 +1089,7 @@ If issues found during verification:
 
 **Note**: PM does NOT invoke `/bug-workflow` — that's for dev agents. PM's job is to document the bug and create the task.
 
-### 4. Git Squash (Consolidate Commits)
+### 5. Git Squash (Consolidate Commits)
 
 **Before cleanup, squash commits per task for clean git history.**
 
@@ -1044,7 +1114,7 @@ If issues found during verification:
 
 **Result**: One commit per task, clean history for rollback.
 
-### 5. .wm/ Cleanup (Haiku Subagent)
+### 6. .wm/ Cleanup (Haiku Subagent)
 
 Spawn Haiku subagent to categorize .wm/ files:
 - **DELETE**: Sprint-specific notes (task-N-*.md, *-plan.md, *-summary.md)
@@ -1053,7 +1123,7 @@ Spawn Haiku subagent to categorize .wm/ files:
 
 Execute deletions. PM approves any distillations.
 
-### 6. Tasks.db Cleanup
+### 7. Tasks.db Cleanup
 
 **No cleanup needed.** Since `tasks.db` is gitignored and local to each developer:
 - Each developer keeps their own progress
@@ -1061,14 +1131,14 @@ Execute deletions. PM approves any distillations.
 - Delete completed sprint's tasks locally when you want: `DELETE FROM tasks WHERE sprint = 'old-sprint';`
 - Or just keep them — they don't affect anything
 
-### 7. Specs Cleanup
+### 8. Specs Cleanup
 
 ```bash
 rm .pm/todo/<sprint>/*
 rmdir .pm/todo/<sprint>
 ```
 
-### 8. Sprint Retrospective
+### 9. Sprint Retrospective
 
 Document briefly:
 - **Patterns emerged**: What was codified in skills?

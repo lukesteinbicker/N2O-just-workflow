@@ -34,10 +34,12 @@ This project uses the N2O workflow system. Skills in `.claude/skills/` are auto-
 - `/pm-agent` — sprint planning, scoping, task breakdown
 - `/tdd-agent` — TDD implementation of sprint tasks
 - `/bug-workflow` — bug investigation and root cause analysis
+- `/frontend-review` — multi-agent UI quality review (programmatic + vision + interaction)
 
 **Pattern skills** (ambient — consulted automatically during relevant work):
 - `/react-best-practices` — React/Next.js performance patterns
 - `/web-design-guidelines` — UI accessibility and design patterns
+- `/ux-heuristics` — 28 principle-based UX heuristic rules
 
 Auto-invocation can be toggled in `.pm/config.json` (`auto_invoke_skills`, `disabled_skills`).
 

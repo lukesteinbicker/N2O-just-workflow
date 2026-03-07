@@ -1,0 +1,18 @@
+{
+  "auth": {
+    "strategy": "none",
+    "storage_state_path": null,
+    "script": null,
+    "env_var": null
+  },
+  "storybook_port": 6006,
+  "storybook_start_command": "npx storybook dev --port 6006 --no-open",
+  "dev_server_command": "npm run dev",
+  "dev_server_ready_timeout_ms": 30000,
+  "data_seeding_strategy": "sequential",
+  "primary_viewport_width": 1280,
+  "max_style_elements": 500,
+  "interaction_step_limit": 30,
+  "interaction_step_timeout_ms": 10000,
+  "interaction_total_timeout_ms": 1800000
+}
