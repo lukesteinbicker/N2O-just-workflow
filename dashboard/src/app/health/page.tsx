@@ -8,6 +8,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { Skeleton } from "@/components/ui/skeleton";
 
 // ── Types ────────────────────────────────────────────────
 
@@ -170,7 +171,30 @@ export default function HealthPage() {
       )}
 
       {loading && !data && (
-        <div className="text-sm text-muted-foreground">Loading...</div>
+        <div className="overflow-hidden rounded-md border border-border">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border bg-card">
+                <th className="px-4 py-2 text-left font-medium text-muted-foreground">Stream</th>
+                <th className="px-4 py-2 text-center font-medium text-muted-foreground w-20">Status</th>
+                <th className="px-4 py-2 text-right font-medium text-muted-foreground w-24">Count</th>
+                <th className="px-4 py-2 text-right font-medium text-muted-foreground w-32">Last Updated</th>
+                <th className="px-4 py-2 text-right font-medium text-muted-foreground w-24">Rate (1h)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {Array.from({ length: 5 }).map((_, i) => (
+                <tr key={i} className="border-b border-border last:border-0">
+                  <td className="px-4 py-2.5"><Skeleton className="h-3.5 w-28" /></td>
+                  <td className="px-4 py-2.5 text-center"><Skeleton className="h-2.5 w-2.5 rounded-full mx-auto" /></td>
+                  <td className="px-4 py-2.5 text-right"><Skeleton className="h-3.5 w-12 ml-auto" /></td>
+                  <td className="px-4 py-2.5 text-right"><Skeleton className="h-3.5 w-16 ml-auto" /></td>
+                  <td className="px-4 py-2.5 text-right"><Skeleton className="h-3.5 w-12 ml-auto" /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
 
       {streams.length > 0 && (

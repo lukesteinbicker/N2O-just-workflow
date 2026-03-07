@@ -19,133 +19,171 @@ vi.mock("next/navigation", () => ({
 }));
 
 describe("parseFilterParams", () => {
-  it("should return defaults when no params present", () => {
+  it("should return empty defaults when no params present", () => {
     const params = new URLSearchParams("");
     const result = parseFilterParams(params);
 
-    expect(result.person).toBeNull();
-    expect(result.project).toBeNull();
-    expect(result.groupBy).toBe("project");
+    expect(result.filters).toEqual({});
+    expect(result.groupBy).toEqual([]);
+    expect(result.sortBy).toEqual([]);
   });
 
-  it("should parse person param", () => {
+  it("should parse f.person multi-select param", () => {
+    const params = new URLSearchParams("f.person=ada,bob");
+    const result = parseFilterParams(params);
+
+    expect(result.filters.person).toEqual(["ada", "bob"]);
+  });
+
+  it("should parse f.status param", () => {
+    const params = new URLSearchParams("f.status=red,blocked");
+    const result = parseFilterParams(params);
+
+    expect(result.filters.status).toEqual(["red", "blocked"]);
+  });
+
+  it("should parse g param for groupBy chain", () => {
+    const params = new URLSearchParams("g=sprint,developer");
+    const result = parseFilterParams(params);
+
+    expect(result.groupBy).toEqual(["sprint", "developer"]);
+  });
+
+  it("should parse s param for sortBy chain with directions", () => {
+    const params = new URLSearchParams("s=status:asc,taskNum:desc");
+    const result = parseFilterParams(params);
+
+    expect(result.sortBy).toEqual([
+      { key: "status", direction: "asc" },
+      { key: "taskNum", direction: "desc" },
+    ]);
+  });
+
+  it("should default sortBy direction to asc when not specified", () => {
+    const params = new URLSearchParams("s=status");
+    const result = parseFilterParams(params);
+
+    expect(result.sortBy).toEqual([{ key: "status", direction: "asc" }]);
+  });
+
+  it("should parse all new-format params together", () => {
+    const params = new URLSearchParams("f.person=ada&f.status=red&g=sprint&s=blowUp:desc");
+    const result = parseFilterParams(params);
+
+    expect(result.filters.person).toEqual(["ada"]);
+    expect(result.filters.status).toEqual(["red"]);
+    expect(result.groupBy).toEqual(["sprint"]);
+    expect(result.sortBy).toEqual([{ key: "blowUp", direction: "desc" }]);
+  });
+
+  // Legacy backwards-compat
+  it("should migrate legacy person param to new format", () => {
     const params = new URLSearchParams("person=ada");
     const result = parseFilterParams(params);
 
-    expect(result.person).toBe("ada");
-    expect(result.project).toBeNull();
+    expect(result.filters.person).toEqual(["ada"]);
   });
 
-  it("should parse project param", () => {
+  it("should migrate legacy project param to new format", () => {
     const params = new URLSearchParams("project=coordination");
     const result = parseFilterParams(params);
 
-    expect(result.project).toBe("coordination");
-    expect(result.person).toBeNull();
+    expect(result.filters.project).toEqual(["coordination"]);
   });
 
-  it("should parse groupBy param with valid values", () => {
-    expect(parseFilterParams(new URLSearchParams("groupBy=developer")).groupBy).toBe("developer");
-    expect(parseFilterParams(new URLSearchParams("groupBy=status")).groupBy).toBe("status");
-    expect(parseFilterParams(new URLSearchParams("groupBy=project")).groupBy).toBe("project");
+  it("should migrate legacy groupBy param to new format", () => {
+    const params = new URLSearchParams("groupBy=developer");
+    const result = parseFilterParams(params);
+
+    expect(result.groupBy).toEqual(["developer"]);
   });
 
-  it("should default groupBy to project for invalid values", () => {
-    const params = new URLSearchParams("groupBy=invalid");
-    expect(parseFilterParams(params).groupBy).toBe("project");
-  });
-
-  it("should parse all params together", () => {
+  it("should migrate all legacy params together", () => {
     const params = new URLSearchParams("person=ada&project=coordination&groupBy=developer");
     const result = parseFilterParams(params);
 
-    expect(result.person).toBe("ada");
-    expect(result.project).toBe("coordination");
-    expect(result.groupBy).toBe("developer");
-  });
-
-  it("should handle URL-encoded values", () => {
-    const params = new URLSearchParams("person=john%20doe&project=my%20project");
-    const result = parseFilterParams(params);
-
-    expect(result.person).toBe("john doe");
-    expect(result.project).toBe("my project");
-  });
-
-  it("should treat empty string params as null", () => {
-    const params = new URLSearchParams("person=&project=");
-    const result = parseFilterParams(params);
-
-    expect(result.person).toBeNull();
-    expect(result.project).toBeNull();
+    expect(result.filters.person).toEqual(["ada"]);
+    expect(result.filters.project).toEqual(["coordination"]);
+    expect(result.groupBy).toEqual(["developer"]);
   });
 });
 
 describe("buildFilterParams", () => {
-  it("should return empty string for default filters", () => {
-    const filters: GlobalFilters = { person: null, project: null, groupBy: "project" };
-    expect(buildFilterParams(filters)).toBe("");
+  it("should return empty string for empty filters", () => {
+    const state: GlobalFilters = { filters: {}, groupBy: [], sortBy: [] };
+    expect(buildFilterParams(state)).toBe("");
   });
 
-  it("should include person when set", () => {
-    const filters: GlobalFilters = { person: "ada", project: null, groupBy: "project" };
-    const result = buildFilterParams(filters);
+  it("should include f.person when set", () => {
+    const state: GlobalFilters = {
+      filters: { person: ["ada"] },
+      groupBy: [],
+      sortBy: [],
+    };
+    const result = buildFilterParams(state);
     const params = new URLSearchParams(result);
 
-    expect(params.get("person")).toBe("ada");
-    expect(params.has("project")).toBe(false);
-    expect(params.has("groupBy")).toBe(false);
+    expect(params.get("f.person")).toBe("ada");
   });
 
-  it("should include project when set", () => {
-    const filters: GlobalFilters = { person: null, project: "coordination", groupBy: "project" };
-    const result = buildFilterParams(filters);
+  it("should join multi-select values with commas", () => {
+    const state: GlobalFilters = {
+      filters: { status: ["red", "blocked"] },
+      groupBy: [],
+      sortBy: [],
+    };
+    const result = buildFilterParams(state);
     const params = new URLSearchParams(result);
 
-    expect(params.get("project")).toBe("coordination");
+    expect(params.get("f.status")).toBe("red,blocked");
   });
 
-  it("should include groupBy when not default", () => {
-    const filters: GlobalFilters = { person: null, project: null, groupBy: "developer" };
-    const result = buildFilterParams(filters);
+  it("should include g param for groupBy", () => {
+    const state: GlobalFilters = {
+      filters: {},
+      groupBy: ["sprint", "developer"],
+      sortBy: [],
+    };
+    const result = buildFilterParams(state);
     const params = new URLSearchParams(result);
 
-    expect(params.get("groupBy")).toBe("developer");
+    expect(params.get("g")).toBe("sprint,developer");
   });
 
-  it("should omit groupBy when it equals default (project)", () => {
-    const filters: GlobalFilters = { person: "ada", project: null, groupBy: "project" };
-    const result = buildFilterParams(filters);
+  it("should include s param for sortBy with directions", () => {
+    const state: GlobalFilters = {
+      filters: {},
+      groupBy: [],
+      sortBy: [
+        { key: "status", direction: "asc" },
+        { key: "taskNum", direction: "desc" },
+      ],
+    };
+    const result = buildFilterParams(state);
     const params = new URLSearchParams(result);
 
-    expect(params.has("groupBy")).toBe(false);
-  });
-
-  it("should include all params when all set", () => {
-    const filters: GlobalFilters = { person: "ada", project: "coordination", groupBy: "status" };
-    const result = buildFilterParams(filters);
-    const params = new URLSearchParams(result);
-
-    expect(params.get("person")).toBe("ada");
-    expect(params.get("project")).toBe("coordination");
-    expect(params.get("groupBy")).toBe("status");
+    expect(params.get("s")).toBe("status:asc,taskNum:desc");
   });
 
   it("should preserve existing non-filter params", () => {
-    const filters: GlobalFilters = { person: "ada", project: null, groupBy: "project" };
+    const state: GlobalFilters = {
+      filters: { person: ["ada"] },
+      groupBy: [],
+      sortBy: [],
+    };
     const existing = new URLSearchParams("chat=abc123&tab=settings");
-    const result = buildFilterParams(filters, existing);
+    const result = buildFilterParams(state, existing);
     const params = new URLSearchParams(result);
 
-    expect(params.get("person")).toBe("ada");
+    expect(params.get("f.person")).toBe("ada");
     expect(params.get("chat")).toBe("abc123");
     expect(params.get("tab")).toBe("settings");
   });
 
-  it("should remove filter params that are null/default", () => {
-    const filters: GlobalFilters = { person: null, project: null, groupBy: "project" };
+  it("should strip legacy params from existing", () => {
+    const state: GlobalFilters = { filters: {}, groupBy: [], sortBy: [] };
     const existing = new URLSearchParams("person=ada&project=coordination&groupBy=developer&chat=abc");
-    const result = buildFilterParams(filters, existing);
+    const result = buildFilterParams(state, existing);
     const params = new URLSearchParams(result);
 
     expect(params.has("person")).toBe(false);
@@ -155,7 +193,11 @@ describe("buildFilterParams", () => {
   });
 
   it("should roundtrip through parse and build", () => {
-    const original: GlobalFilters = { person: "ada", project: "coordination", groupBy: "developer" };
+    const original: GlobalFilters = {
+      filters: { person: ["ada"], status: ["red", "blocked"] },
+      groupBy: ["sprint"],
+      sortBy: [{ key: "blowUp", direction: "desc" }],
+    };
     const paramString = buildFilterParams(original);
     const parsed = parseFilterParams(new URLSearchParams(paramString));
 
@@ -169,94 +211,63 @@ describe("useGlobalFilters hook", () => {
     mockSearchParams = new URLSearchParams("");
   });
 
-  it("should return default filter values when URL has no params", () => {
+  it("should return empty defaults when URL has no params", () => {
     const { result } = renderHook(() => useGlobalFilters());
 
-    expect(result.current.person).toBeNull();
-    expect(result.current.project).toBeNull();
-    expect(result.current.groupBy).toBe("project");
+    expect(result.current.filters).toEqual({});
+    expect(result.current.groupBy).toEqual([]);
+    expect(result.current.sortBy).toEqual([]);
+    expect(result.current.activeCount).toBe(0);
   });
 
-  it("should read filter values from URL search params", () => {
-    mockSearchParams = new URLSearchParams("person=ada&project=coordination&groupBy=developer");
+  it("should read new-format filter values from URL", () => {
+    mockSearchParams = new URLSearchParams("f.person=ada&g=developer&s=blowUp:desc");
     const { result } = renderHook(() => useGlobalFilters());
 
-    expect(result.current.person).toBe("ada");
-    expect(result.current.project).toBe("coordination");
-    expect(result.current.groupBy).toBe("developer");
+    expect(result.current.filters.person).toEqual(["ada"]);
+    expect(result.current.groupBy).toEqual(["developer"]);
+    expect(result.current.sortBy).toEqual([{ key: "blowUp", direction: "desc" }]);
   });
 
-  it("should call router.replace with updated URL when setPerson is called", () => {
+  it("should toggle a filter value on", () => {
     const { result } = renderHook(() => useGlobalFilters());
 
     act(() => {
-      result.current.setPerson("ada");
-    });
-
-    expect(mockReplace).toHaveBeenCalledWith(
-      "/tasks?person=ada",
-      { scroll: false }
-    );
-  });
-
-  it("should call router.replace with updated URL when setProject is called", () => {
-    const { result } = renderHook(() => useGlobalFilters());
-
-    act(() => {
-      result.current.setProject("coordination");
-    });
-
-    expect(mockReplace).toHaveBeenCalledWith(
-      "/tasks?project=coordination",
-      { scroll: false }
-    );
-  });
-
-  it("should call router.replace with updated URL when setGroupBy is called", () => {
-    const { result } = renderHook(() => useGlobalFilters());
-
-    act(() => {
-      result.current.setGroupBy("developer");
-    });
-
-    expect(mockReplace).toHaveBeenCalledWith(
-      "/tasks?groupBy=developer",
-      { scroll: false }
-    );
-  });
-
-  it("should preserve existing filter params when updating one filter", () => {
-    mockSearchParams = new URLSearchParams("person=ada&groupBy=developer");
-    const { result } = renderHook(() => useGlobalFilters());
-
-    act(() => {
-      result.current.setProject("coordination");
+      result.current.toggleFilterValue("status", "red");
     });
 
     expect(mockReplace).toHaveBeenCalledTimes(1);
     const url = mockReplace.mock.calls[0][0] as string;
     const params = new URLSearchParams(url.split("?")[1]);
-    expect(params.get("person")).toBe("ada");
-    expect(params.get("project")).toBe("coordination");
-    expect(params.get("groupBy")).toBe("developer");
+    expect(params.get("f.status")).toBe("red");
   });
 
-  it("should clear person filter when setPerson(null) is called", () => {
-    mockSearchParams = new URLSearchParams("person=ada&project=coordination");
+  it("should add a groupBy dimension", () => {
     const { result } = renderHook(() => useGlobalFilters());
 
     act(() => {
-      result.current.setPerson(null);
+      result.current.addGroupBy("developer");
     });
 
-    expect(mockReplace).toHaveBeenCalledWith(
-      "/tasks?project=coordination",
-      { scroll: false }
-    );
+    const url = mockReplace.mock.calls[0][0] as string;
+    const params = new URLSearchParams(url.split("?")[1]);
+    expect(params.get("g")).toBe("developer");
   });
 
-  it("should reset all filters when clearAll is called", () => {
-    mockSearchParams = new URLSearchParams("person=ada&project=coordination&groupBy=developer");
+  it("should add a sortBy clause", () => {
+    const { result } = renderHook(() => useGlobalFilters());
+
+    act(() => {
+      result.current.addSortBy("blowUp", "desc");
+    });
+
+    const url = mockReplace.mock.calls[0][0] as string;
+    const params = new URLSearchParams(url.split("?")[1]);
+    expect(params.get("s")).toBe("blowUp:desc");
+  });
+
+  it("should clear all filters, groupBy, and sortBy", () => {
+    mockSearchParams = new URLSearchParams("f.person=ada&g=developer&s=blowUp:desc");
     const { result } = renderHook(() => useGlobalFilters());
 
     act(() => {
@@ -269,31 +280,25 @@ describe("useGlobalFilters hook", () => {
     );
   });
 
-  it("should preserve non-filter URL params when updating filters", () => {
-    mockSearchParams = new URLSearchParams("chat=abc123&person=ada");
+  it("should preserve non-filter URL params when updating", () => {
+    mockSearchParams = new URLSearchParams("chat=abc123&f.person=ada");
     const { result } = renderHook(() => useGlobalFilters());
 
     act(() => {
-      result.current.setPerson("bob");
+      result.current.setFilter("person", ["bob"]);
     });
 
     const url = mockReplace.mock.calls[0][0] as string;
     const params = new URLSearchParams(url.split("?")[1]);
     expect(params.get("chat")).toBe("abc123");
-    expect(params.get("person")).toBe("bob");
+    expect(params.get("f.person")).toBe("bob");
   });
 
-  it("should accept partial updates via setFilters", () => {
+  it("should count active filter clauses", () => {
+    mockSearchParams = new URLSearchParams("f.person=ada,bob&f.status=red&g=sprint&s=blowUp:desc");
     const { result } = renderHook(() => useGlobalFilters());
 
-    act(() => {
-      result.current.setFilters({ person: "ada", groupBy: "status" });
-    });
-
-    const url = mockReplace.mock.calls[0][0] as string;
-    const params = new URLSearchParams(url.split("?")[1]);
-    expect(params.get("person")).toBe("ada");
-    expect(params.get("groupBy")).toBe("status");
-    expect(params.has("project")).toBe(false);
+    // 2 person values + 1 status value + 1 groupBy + 1 sortBy = 5
+    expect(result.current.activeCount).toBe(5);
   });
 });

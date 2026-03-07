@@ -32,7 +32,7 @@ export function computeStreamKpis(
 
     if (s.endedAt === null) {
       activeSessions++;
-      const dev = s.developer ?? "unassigned";
+      const dev = s.developer?.name ?? "unassigned";
       onlineDevSet.add(dev);
     }
   }
@@ -91,7 +91,7 @@ export function groupSessionsByDeveloper(sessions: Session[]): DeveloperGroup[] 
 
   const map = new Map<string, Session[]>();
   for (const s of sessions) {
-    const dev = s.developer ?? "unassigned";
+    const dev = s.developer?.name ?? "unassigned";
     if (!map.has(dev)) map.set(dev, []);
     map.get(dev)!.push(s);
   }
@@ -118,7 +118,7 @@ export function computeChartData(sessions: Session[]): ChartDataPoint[] {
   // Collect all start/end events
   const events: { time: number; developer: string; delta: number }[] = [];
   for (const s of sessions) {
-    const dev = s.developer ?? "unassigned";
+    const dev = s.developer?.name ?? "unassigned";
     events.push({ time: new Date(s.startedAt).getTime(), developer: dev, delta: 1 });
     if (s.endedAt) {
       events.push({ time: new Date(s.endedAt).getTime(), developer: dev, delta: -1 });
@@ -128,7 +128,7 @@ export function computeChartData(sessions: Session[]): ChartDataPoint[] {
   events.sort((a, b) => a.time - b.time);
 
   // Get unique developers
-  const developers = Array.from(new Set(sessions.map((s) => s.developer ?? "unassigned"))).sort();
+  const developers = Array.from(new Set(sessions.map((s) => s.developer?.name ?? "unassigned"))).sort();
 
   // Build chart data points at each event time
   const counts: Record<string, number> = {};

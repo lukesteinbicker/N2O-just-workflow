@@ -1,9 +1,14 @@
 "use client";
 
+import { useMemo } from "react";
 import { useQuery } from "@apollo/client/react";
 import { gql } from "@apollo/client/core";
-import { useGlobalFilters, type GroupBy } from "@/hooks/use-global-filters";
 import { X } from "lucide-react";
+import { useGlobalFilters } from "@/hooks/use-global-filters";
+import { usePageFilterConfig } from "@/lib/filter-dimensions";
+import { MultiSelectFilter } from "./filter-bar/multi-select-filter";
+import { GroupByPills } from "./filter-bar/group-by-pills";
+import { SortByPills } from "./filter-bar/sort-by-pills";
 
 const FILTER_OPTIONS_QUERY = gql`
   query FilterOptions {
@@ -18,79 +23,140 @@ const FILTER_OPTIONS_QUERY = gql`
   }
 `;
 
-const GROUP_BY_OPTIONS: { value: GroupBy; label: string }[] = [
-  { value: "project", label: "By Project" },
-  { value: "developer", label: "By Developer" },
-  { value: "status", label: "By Status" },
-];
+/** Resolve options for a dimension: static values or query-derived values. */
+function useResolvedOptions(
+  dimensions: { id: string; options: { type: string; values?: string[]; field?: string } }[],
+  queryData: Record<string, unknown> | undefined
+): Map<string, string[]> {
+  return useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const dim of dimensions) {
+      if (dim.options.type === "static" && dim.options.values) {
+        map.set(dim.id, dim.options.values);
+      } else if (dim.options.type === "query" && dim.options.field && queryData) {
+        const field = dim.options.field;
+        if (field === "developers") {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const devs = (queryData as any)?.developers ?? [];
+          map.set(dim.id, devs.map((d: { name: string }) => d.name));
+        } else if (field === "projects") {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const sprints = (queryData as any)?.sprints ?? [];
+          const projects = Array.from(
+            new Set(
+              sprints
+                .map((s: { projectId: string | null }) => s.projectId)
+                .filter(Boolean)
+            )
+          ).sort() as string[];
+          map.set(dim.id, projects);
+        } else if (field === "sprints") {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const sprints = (queryData as any)?.sprints ?? [];
+          map.set(dim.id, sprints.map((s: { name: string }) => s.name));
+        } else if (field === "models") {
+          // Models come from session data — use static fallback for now
+          map.set(dim.id, []);
+        } else {
+          map.set(dim.id, []);
+        }
+      } else {
+        map.set(dim.id, []);
+      }
+    }
+    return map;
+  }, [dimensions, queryData]);
+}
 
 export function FilterBar() {
-  const { person, project, groupBy, setPerson, setProject, setGroupBy, clearAll } =
-    useGlobalFilters();
+  const config = usePageFilterConfig();
+  const {
+    filters,
+    groupBy,
+    sortBy,
+    toggleFilterValue,
+    addGroupBy,
+    removeGroupBy,
+    addSortBy,
+    removeSortBy,
+    toggleSortDirection,
+    clearAll,
+    activeCount,
+  } = useGlobalFilters();
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data } = useQuery<any>(FILTER_OPTIONS_QUERY);
-  const developers: { name: string; fullName: string | null }[] = data?.developers ?? [];
-  const sprints: { name: string; projectId: string | null }[] = data?.sprints ?? [];
 
-  // Extract unique project IDs from sprints as project filter options
-  const projects = Array.from(
-    new Set(sprints.map((s) => s.projectId).filter(Boolean))
-  ).sort() as string[];
+  const resolvedOptions = useResolvedOptions(
+    config?.dimensions ?? [],
+    data
+  );
 
-  const hasActiveFilter = person !== null || project !== null || groupBy !== "project";
+  // No config = page doesn't use filters (Health, Ontology, Skills)
+  if (!config) return null;
+
+  const filterDims = config.dimensions.filter((d) =>
+    d.kinds.includes("filter")
+  );
+  const groupDims = config.dimensions.filter((d) =>
+    d.kinds.includes("groupBy")
+  );
+  const sortDims = config.dimensions.filter((d) =>
+    d.kinds.includes("sortBy")
+  );
 
   return (
-    <div className="flex items-center gap-2 px-1 py-1.5">
-      {/* Person filter */}
-      <select
-        value={person ?? ""}
-        onChange={(e) => setPerson(e.target.value || null)}
-        className="h-7 rounded-sm border border-border bg-secondary px-2 text-xs text-foreground outline-none focus:ring-1 focus:ring-ring"
-      >
-        <option value="">All people</option>
-        {developers.map((d) => (
-          <option key={d.name} value={d.name}>
-            {d.fullName || d.name}
-          </option>
-        ))}
-      </select>
+    <div className="flex flex-wrap items-center gap-2 px-4 py-1.5 border-b border-border">
+      {/* Multi-select filters */}
+      {filterDims.map((dim) => (
+        <MultiSelectFilter
+          key={dim.id}
+          label={dim.label}
+          options={resolvedOptions.get(dim.id) ?? []}
+          selected={filters[dim.id] ?? []}
+          onToggle={(val) => toggleFilterValue(dim.id, val)}
+        />
+      ))}
 
-      {/* Project filter */}
-      <select
-        value={project ?? ""}
-        onChange={(e) => setProject(e.target.value || null)}
-        className="h-7 rounded-sm border border-border bg-secondary px-2 text-xs text-foreground outline-none focus:ring-1 focus:ring-ring"
-      >
-        <option value="">All projects</option>
-        {projects.map((p) => (
-          <option key={p} value={p}>
-            {p}
-          </option>
-        ))}
-      </select>
+      {/* Separator */}
+      {filterDims.length > 0 && (groupDims.length > 0 || sortDims.length > 0) && (
+        <div className="w-px h-5 bg-border/40 mx-0.5" />
+      )}
 
-      {/* Group by */}
-      <select
-        value={groupBy}
-        onChange={(e) => setGroupBy(e.target.value as GroupBy)}
-        className="h-7 rounded-sm border border-border bg-secondary px-2 text-xs text-foreground outline-none focus:ring-1 focus:ring-ring"
-      >
-        {GROUP_BY_OPTIONS.map((opt) => (
-          <option key={opt.value} value={opt.value}>
-            {opt.label}
-          </option>
-        ))}
-      </select>
+      {/* Group-by pills */}
+      {groupDims.length > 0 && (
+        <GroupByPills
+          active={groupBy}
+          available={groupDims.map((d) => ({ id: d.id, label: d.label }))}
+          onAdd={addGroupBy}
+          onRemove={removeGroupBy}
+        />
+      )}
+
+      {/* Separator */}
+      {groupDims.length > 0 && sortDims.length > 0 && (
+        <div className="w-px h-5 bg-border/40 mx-0.5" />
+      )}
+
+      {/* Sort-by pills */}
+      {sortDims.length > 0 && (
+        <SortByPills
+          active={sortBy}
+          available={sortDims.map((d) => ({ id: d.id, label: d.label }))}
+          onAdd={addSortBy}
+          onRemove={removeSortBy}
+          onToggleDirection={toggleSortDirection}
+        />
+      )}
 
       {/* Clear all */}
-      {hasActiveFilter && (
+      {activeCount > 0 && (
         <button
           onClick={clearAll}
           className="flex h-7 items-center gap-1 rounded-sm px-2 text-xs text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
         >
           <X size={12} />
-          Clear
+          Clear ({activeCount})
         </button>
       )}
     </div>

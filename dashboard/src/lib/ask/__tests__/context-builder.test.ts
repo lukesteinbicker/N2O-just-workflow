@@ -12,7 +12,7 @@ describe("buildContextPrompt", () => {
     const ctx: AskContext = {
       date: "2026-03-04T12:00:00.000Z",
       route: "/",
-      filters: { person: null, project: null, groupBy: "project" },
+      filters: { filters: {}, groupBy: [], sortBy: [] },
       visibleDataSummary: null,
     };
     const result = buildContextPrompt(ctx);
@@ -23,7 +23,7 @@ describe("buildContextPrompt", () => {
     const ctx: AskContext = {
       date: "2026-03-04T12:00:00.000Z",
       route: "/tasks",
-      filters: { person: null, project: null, groupBy: "project" },
+      filters: { filters: {}, groupBy: [], sortBy: [] },
       visibleDataSummary: null,
     };
     const result = buildContextPrompt(ctx);
@@ -35,7 +35,11 @@ describe("buildContextPrompt", () => {
     const ctx: AskContext = {
       date: "2026-03-04T12:00:00.000Z",
       route: "/tasks",
-      filters: { person: "Alice", project: "coordination", groupBy: "developer" },
+      filters: {
+        filters: { person: ["Alice"], project: ["coordination"] },
+        groupBy: ["developer"],
+        sortBy: [],
+      },
       visibleDataSummary: null,
     };
     const result = buildContextPrompt(ctx);
@@ -48,7 +52,7 @@ describe("buildContextPrompt", () => {
     const ctx: AskContext = {
       date: "2026-03-04T12:00:00.000Z",
       route: "/",
-      filters: { person: null, project: null, groupBy: "project" },
+      filters: { filters: {}, groupBy: [], sortBy: [] },
       visibleDataSummary: null,
     };
     const result = buildContextPrompt(ctx);
@@ -59,7 +63,7 @@ describe("buildContextPrompt", () => {
     const ctx: AskContext = {
       date: "2026-03-04T12:00:00.000Z",
       route: "/tasks",
-      filters: { person: null, project: null, groupBy: "project" },
+      filters: { filters: {}, groupBy: [], sortBy: [] },
       visibleDataSummary: "Tasks page: 31 tasks, 12 done, 3 blocked in coordination sprint",
     };
     const result = buildContextPrompt(ctx);
@@ -73,7 +77,7 @@ describe("buildContextPrompt", () => {
     const ctx: AskContext = {
       date: "2026-03-04T12:00:00.000Z",
       route: "/",
-      filters: { person: null, project: null, groupBy: "project" },
+      filters: { filters: {}, groupBy: [], sortBy: [] },
       visibleDataSummary: null,
     };
     const result = buildContextPrompt(ctx);
@@ -84,11 +88,45 @@ describe("buildContextPrompt", () => {
     const ctx: AskContext = {
       date: "2026-03-04T12:00:00.000Z",
       route: "/",
-      filters: { person: null, project: null, groupBy: "project" },
+      filters: { filters: {}, groupBy: [], sortBy: [] },
       visibleDataSummary: null,
     };
     const result = buildContextPrompt(ctx);
     expect(result.length).toBeGreaterThan(0);
+  });
+
+  it("includes sort-by clauses when present", () => {
+    const ctx: AskContext = {
+      date: "2026-03-04T12:00:00.000Z",
+      route: "/tasks",
+      filters: {
+        filters: {},
+        groupBy: [],
+        sortBy: [{ key: "blowUp", direction: "desc" }],
+      },
+      visibleDataSummary: null,
+    };
+    const result = buildContextPrompt(ctx);
+    expect(result).toContain("blowUp");
+    expect(result).toContain("desc");
+    expect(result).toContain("sorted by");
+  });
+
+  it("includes multi-select filter values", () => {
+    const ctx: AskContext = {
+      date: "2026-03-04T12:00:00.000Z",
+      route: "/tasks",
+      filters: {
+        filters: { status: ["red", "blocked"] },
+        groupBy: [],
+        sortBy: [],
+      },
+      visibleDataSummary: null,
+    };
+    const result = buildContextPrompt(ctx);
+    expect(result).toContain("red");
+    expect(result).toContain("blocked");
+    expect(result).toContain("status");
   });
 });
 

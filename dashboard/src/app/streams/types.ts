@@ -11,8 +11,8 @@ export interface SubagentSession {
 
 export interface Session {
   sessionId: string;
-  developer: string | null;
-  sprint: string | null;
+  developer: { name: string } | null;
+  sprint: { name: string } | null;
   taskNum: number | null;
   taskTitle: string | null;
   skillName: string | null;

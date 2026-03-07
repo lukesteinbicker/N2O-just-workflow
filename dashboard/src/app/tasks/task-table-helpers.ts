@@ -2,6 +2,7 @@
 // Extracted from the component for testability.
 
 import type { Task } from "./types";
+import type { SortClause } from "@/lib/filter-dimensions";
 import { taskKey } from "./helpers";
 
 export type SortColumn =
@@ -104,6 +105,91 @@ export function sortTasks(
   });
 
   return sorted;
+}
+
+/**
+ * Multi-level sort using SortClause[] from global filters.
+ * Maps clause keys to SortColumn equivalents, then chains comparisons.
+ */
+export function multiSortTasks(
+  tasks: Task[],
+  clauses: SortClause[],
+  timeInStatusMap: Map<string, string>
+): Task[] {
+  if (clauses.length === 0) return [...tasks];
+
+  const sorted = [...tasks];
+
+  sorted.sort((a, b) => {
+    for (const clause of clauses) {
+      const column = clause.key as SortColumn;
+      const dir = clause.direction === "asc" ? 1 : -1;
+      let cmp = 0;
+
+      switch (column) {
+        case "taskNum":
+          cmp = (a.taskNum - b.taskNum) * dir;
+          break;
+        case "title":
+          cmp = a.title.localeCompare(b.title) * dir;
+          break;
+        case "owner": {
+          const aName = a.owner?.name ?? null;
+          const bName = b.owner?.name ?? null;
+          if (aName === null && bName !== null) cmp = 1;
+          else if (aName !== null && bName === null) cmp = -1;
+          else if (aName !== null && bName !== null) cmp = aName.localeCompare(bName) * dir;
+          break;
+        }
+        case "status":
+          cmp = a.status.localeCompare(b.status) * dir;
+          break;
+        case "sprint":
+          cmp = a.sprint.localeCompare(b.sprint) * dir;
+          break;
+        case "blowUp": {
+          const aRatio = a.blowUpRatio;
+          const bRatio = b.blowUpRatio;
+          if (aRatio === null && bRatio !== null) cmp = 1;
+          else if (aRatio !== null && bRatio === null) cmp = -1;
+          else if (aRatio !== null && bRatio !== null) cmp = (aRatio - bRatio) * dir;
+          break;
+        }
+        case "timeInStatus": {
+          const aKey = taskKey(a.sprint, a.taskNum);
+          const bKey = taskKey(b.sprint, b.taskNum);
+          const aVal = parseTimeInStatusForSort(timeInStatusMap.get(aKey) ?? "\u2014");
+          const bVal = parseTimeInStatusForSort(timeInStatusMap.get(bKey) ?? "\u2014");
+          if (aVal === Infinity && bVal !== Infinity) cmp = 1;
+          else if (aVal !== Infinity && bVal === Infinity) cmp = -1;
+          else if (aVal !== Infinity && bVal !== Infinity) cmp = (aVal - bVal) * dir;
+          break;
+        }
+        case "deps":
+          cmp = (a.dependencies.length - b.dependencies.length) * dir;
+          break;
+      }
+
+      if (cmp !== 0) return cmp;
+    }
+    return 0;
+  });
+
+  return sorted;
+}
+
+/** Parse TIS string for sorting (same logic as parseTimeInStatus but exposed for multiSort). */
+function parseTimeInStatusForSort(tis: string): number {
+  if (tis === "\u2014" || !tis) return Infinity;
+  const match = tis.match(/^([\d.]+)(m|h|d)$/);
+  if (!match) return Infinity;
+  const value = parseFloat(match[1]);
+  switch (match[2]) {
+    case "m": return value;
+    case "h": return value * 60;
+    case "d": return value * 1440;
+    default: return Infinity;
+  }
 }
 
 /**

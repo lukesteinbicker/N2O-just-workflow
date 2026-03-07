@@ -14,14 +14,59 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export default function VelocityPage() {
   const { data, loading, error } = useQuery<any>(VELOCITY_QUERY);
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-full text-muted-foreground">
-        Loading velocity data...
+      <div className="space-y-4">
+        <h1 className="text-lg font-semibold">Velocity Trends</h1>
+        {/* Learning rate card */}
+        <div className="rounded-md border border-border bg-card p-3 space-y-3">
+          <Skeleton className="h-3 w-56" />
+          <div className="space-y-2">
+            <Skeleton className="h-4 w-24" />
+            <div className="flex items-center gap-3">
+              <Skeleton className="h-3 w-16" />
+              <Skeleton className="h-3 w-10" />
+              <Skeleton className="h-3 w-16" />
+              <Skeleton className="h-3 w-10" />
+            </div>
+          </div>
+        </div>
+        {/* 2-col grid */}
+        <div className="grid grid-cols-2 gap-3">
+          <div className="rounded-md border border-border bg-card p-3 space-y-2">
+            <Skeleton className="h-3 w-36" />
+            <Skeleton className="h-3 w-full" />
+            <Skeleton className="h-3 w-full" />
+          </div>
+          <div className="rounded-md border border-border bg-card p-3 space-y-2">
+            <Skeleton className="h-3 w-28" />
+            <Skeleton className="h-3 w-full" />
+            <Skeleton className="h-3 w-full" />
+          </div>
+        </div>
+        {/* Blow-up table */}
+        <div className="rounded-md border border-border bg-card p-3 space-y-2">
+          <Skeleton className="h-3 w-52" />
+          <div className="space-y-1.5">
+            <div className="flex gap-3">
+              {Array.from({ length: 7 }).map((_, i) => (
+                <Skeleton key={i} className="h-3 flex-1" />
+              ))}
+            </div>
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="flex gap-3">
+                {Array.from({ length: 7 }).map((_, j) => (
+                  <Skeleton key={j} className="h-3.5 flex-1" />
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     );
   }
@@ -43,18 +88,18 @@ export default function VelocityPage() {
   // Group learning rate by developer
   const devRates = new Map<string, Array<{ sprint: string; ratio: number }>>();
   for (const r of learningRate) {
-    const list = devRates.get(r.owner) ?? [];
-    list.push({ sprint: r.sprint, ratio: r.avgBlowUpRatio });
-    devRates.set(r.owner, list);
+    const list = devRates.get(r.owner?.name) ?? [];
+    list.push({ sprint: r.sprint?.name, ratio: r.avgBlowUpRatio });
+    devRates.set(r.owner?.name, list);
   }
 
   // Aggregate phase distribution by sprint
   const phaseData = data?.phaseTimingDistribution ?? [];
   const sprintPhases = new Map<string, Map<string, number>>();
   for (const p of phaseData) {
-    const sp = sprintPhases.get(p.sprint) ?? new Map();
+    const sp = sprintPhases.get(p.sprint?.name) ?? new Map();
     sp.set(p.phase, (sp.get(p.phase) ?? 0) + p.seconds);
-    sprintPhases.set(p.sprint, sp);
+    sprintPhases.set(p.sprint?.name, sp);
   }
 
   return (
@@ -158,11 +203,11 @@ export default function VelocityPage() {
             <div className="space-y-1">
               {tokenTrend.map((t: any) => (
                 <div
-                  key={`${t.sprint}-${t.complexity}`}
+                  key={`${t.sprint?.name}-${t.complexity}`}
                   className="flex items-center justify-between"
                 >
                   <span className="text-xs font-mono text-accent-foreground" data-mono>
-                    {t.sprint} ({t.complexity ?? "—"})
+                    {t.sprint?.name} ({t.complexity ?? "—"})
                   </span>
                   <span className="text-xs font-mono" data-mono>
                     {t.avgTokensPerTask
@@ -199,11 +244,11 @@ export default function VelocityPage() {
             <TableBody>
               {blowUpFactors.map((b: any) => (
                 <TableRow
-                  key={`${b.sprint}-${b.taskNum}`}
+                  key={`${b.sprint?.name}-${b.taskNum}`}
                   className="border-border hover:bg-secondary/50"
                 >
                   <TableCell className="py-1.5 text-xs font-mono" data-mono>
-                    {b.sprint}
+                    {b.sprint?.name}
                   </TableCell>
                   <TableCell className="py-1.5 text-xs">
                     #{b.taskNum} {b.title}

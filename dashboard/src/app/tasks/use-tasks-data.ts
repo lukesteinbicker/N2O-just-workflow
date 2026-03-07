@@ -5,10 +5,11 @@ import {
   CLAIM_TASK_MUTATION,
   UNCLAIM_TASK_MUTATION,
   ASSIGN_TASK_MUTATION,
+  RESOLVE_STALE_TASKS_MUTATION,
 } from "@/lib/graphql/queries";
 import { useRealtimeTable } from "@/hooks/use-realtime";
 import { useGlobalFilters } from "@/hooks/use-global-filters";
-import type { Task, ProjectGroup, DeveloperGroup, SprintTaskGroup } from "./types";
+import type { Task, GanttGroup, ProjectGroup, DeveloperGroup, SprintTaskGroup } from "./types";
 import {
   taskKey,
   isStaleTask,
@@ -20,8 +21,9 @@ import {
   MS_PER_HOUR,
   ZOOM_PRESETS,
 } from "./helpers";
+import { tasksFilterConfig } from "./filter-config";
 
-// ── Exported types (keep SprintGroup for Gantt) ──────────────
+// ── Exported types (keep SprintGroup for backwards compat) ────
 
 export interface SprintGroup {
   sprint: string;
@@ -47,17 +49,12 @@ export interface Kpis {
 
 // ── Pure functions (exported for testing) ────────────────────
 
-/**
- * Group tasks by project using sprint-to-projectId mapping.
- * Tasks within each sprint are sorted by taskNum.
- */
 export function groupTasksByProject(
   tasks: Task[],
   sprintProjects: Map<string, string | null>
 ): ProjectGroup[] {
   if (tasks.length === 0) return [];
 
-  // Collect sprints per project
   const projectMap = new Map<string | null, Map<string, Task[]>>();
 
   for (const t of tasks) {
@@ -87,10 +84,6 @@ export function groupTasksByProject(
   return groups;
 }
 
-/**
- * Group tasks by developer/owner. Unassigned tasks go under "unassigned".
- * Groups are sorted alphabetically by developer name.
- */
 export function groupTasksByDeveloper(tasks: Task[]): DeveloperGroup[] {
   if (tasks.length === 0) return [];
 
@@ -109,17 +102,88 @@ export function groupTasksByDeveloper(tasks: Task[]): DeveloperGroup[] {
     .sort((a, b) => a.developer.localeCompare(b.developer));
 }
 
-/**
- * Compute live time-in-status for a task.
- * Returns a human-readable duration for red/blocked tasks with startedAt,
- * or an em-dash for tasks that are pending/green or have no startedAt.
- */
 export function computeTimeInStatus(task: Task): string {
-  // Only compute for active statuses (in-progress or blocked)
   if (task.status !== "red" && task.status !== "blocked") return "\u2014";
   if (!task.startedAt) return "\u2014";
 
   return formatDuration(task.startedAt, null);
+}
+
+/** Build GanttGroups based on the first groupBy dimension. */
+export function buildGanttGroups(
+  tasks: Task[],
+  groupByDim: string,
+  sprintProjects: Map<string, string | null>
+): GanttGroup[] {
+  if (tasks.length === 0) return [];
+
+  switch (groupByDim) {
+    case "person": {
+      const devMap = new Map<string, Task[]>();
+      for (const t of tasks) {
+        const dev = t.owner?.name ?? "unassigned";
+        if (!devMap.has(dev)) devMap.set(dev, []);
+        devMap.get(dev)!.push(t);
+      }
+      return Array.from(devMap.entries())
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .map(([dev, devTasks]) => ({
+          label: dev,
+          groupKey: dev,
+          tasks: devTasks.sort((a, b) => a.taskNum - b.taskNum),
+        }));
+    }
+    case "status": {
+      const statusOrder = ["red", "blocked", "pending", "green"];
+      const statusMap = new Map<string, Task[]>();
+      for (const t of tasks) {
+        if (!statusMap.has(t.status)) statusMap.set(t.status, []);
+        statusMap.get(t.status)!.push(t);
+      }
+      return statusOrder
+        .filter((s) => statusMap.has(s))
+        .map((s) => ({
+          label: s,
+          groupKey: s,
+          tasks: statusMap.get(s)!.sort((a, b) => a.taskNum - b.taskNum),
+        }));
+    }
+    case "project": {
+      const projMap = new Map<string, Task[]>();
+      for (const t of tasks) {
+        const proj = sprintProjects.get(t.sprint) ?? "unknown";
+        if (!projMap.has(proj)) projMap.set(proj, []);
+        projMap.get(proj)!.push(t);
+      }
+      return Array.from(projMap.entries())
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .map(([proj, projTasks]) => ({
+          label: proj,
+          groupKey: proj,
+          tasks: projTasks.sort((a, b) => a.taskNum - b.taskNum),
+        }));
+    }
+    case "sprint":
+    default: {
+      const sprintOrder: string[] = [];
+      const sprintMap = new Map<string, Task[]>();
+      for (const t of tasks) {
+        if (!sprintMap.has(t.sprint)) {
+          sprintOrder.push(t.sprint);
+          sprintMap.set(t.sprint, []);
+        }
+        sprintMap.get(t.sprint)!.push(t);
+      }
+      for (const tasks of sprintMap.values()) {
+        tasks.sort((a, b) => a.taskNum - b.taskNum);
+      }
+      return sprintOrder.map((sprint) => ({
+        label: sprint,
+        groupKey: sprint,
+        tasks: sprintMap.get(sprint)!,
+      }));
+    }
+  }
 }
 
 // ── Hook ─────────────────────────────────────────────────────
@@ -129,8 +193,13 @@ export function useTasksData() {
   const { data, loading, error, refetch } = useQuery<any>(TASKS_BOARD_QUERY);
   useRealtimeTable("tasks", refetch);
 
-  // Global filters (person, project, groupBy)
-  const { person, project, groupBy } = useGlobalFilters();
+  // Global filters
+  const { filters, groupBy, sortBy } = useGlobalFilters();
+
+  // Effective groupBy — fall back to page default
+  const effectiveGroupBy = groupBy.length > 0
+    ? groupBy
+    : tasksFilterConfig.defaultGroupBy ?? ["sprint"];
 
   // Claim/assign mutations
   /* eslint-disable @typescript-eslint/no-explicit-any -- Turbopack requires <any> for Apollo hooks */
@@ -141,6 +210,9 @@ export function useTasksData() {
     refetchQueries: [{ query: TASKS_BOARD_QUERY }],
   });
   const [assignTaskMutation] = useMutation<any>(ASSIGN_TASK_MUTATION, {
+    refetchQueries: [{ query: TASKS_BOARD_QUERY }],
+  });
+  const [resolveStaleTasksMutation] = useMutation<any>(RESOLVE_STALE_TASKS_MUTATION, {
     refetchQueries: [{ query: TASKS_BOARD_QUERY }],
   });
   /* eslint-enable @typescript-eslint/no-explicit-any */
@@ -163,13 +235,13 @@ export function useTasksData() {
     [assignTaskMutation]
   );
 
+  const resolveStaleTasks = useCallback(
+    () => resolveStaleTasksMutation(),
+    [resolveStaleTasksMutation]
+  );
+
   const [selectedTaskKey, setSelectedTaskKey] = useState<string | null>(null);
   const [collapsedSprints, setCollapsedSprints] = useState<Set<string>>(new Set());
-  const [statusFilter, setStatusFilter] = useState<Set<string>>(
-    new Set(["pending", "red", "green", "blocked"])
-  );
-  const [sprintFilter, setSprintFilter] = useState<string | null>(null);
-  const [ownerFilter, setOwnerFilter] = useState<string | null>(null);
   const [zoomPreset, setZoomPreset] = useState(3);
 
   // Time-in-status tick counter (forces re-computation every 60s)
@@ -195,7 +267,7 @@ export function useTasksData() {
 
   const allTasks: Task[] = useMemo(() => data?.tasks ?? [], [data]);
 
-  // Sprint-to-projectId lookup from the sprints query
+  // Sprint-to-projectId lookup
   const sprintProjects = useMemo(() => {
     const m = new Map<string, string | null>();
     const sprints = data?.sprints ?? [];
@@ -217,22 +289,38 @@ export function useTasksData() {
     return Array.from(s).sort();
   }, [allTasks]);
 
-  // Apply local filters + global filters (person, project)
+  // Apply global multi-select filters
   const filteredTasks = useMemo(() => {
     return allTasks.filter((t) => {
-      if (!statusFilter.has(t.status)) return false;
-      if (sprintFilter && t.sprint !== sprintFilter) return false;
-      if (ownerFilter && t.owner?.name !== ownerFilter) return false;
-      // Global person filter
-      if (person && t.owner?.name !== person) return false;
-      // Global project filter
-      if (project) {
+      // person filter (multi-select)
+      const personFilter = filters.person;
+      if (personFilter && personFilter.length > 0) {
+        if (!t.owner?.name || !personFilter.includes(t.owner.name)) return false;
+      }
+      // project filter (multi-select)
+      const projectFilter = filters.project;
+      if (projectFilter && projectFilter.length > 0) {
         const taskProject = sprintProjects.get(t.sprint);
-        if (taskProject !== project) return false;
+        if (!taskProject || !projectFilter.includes(taskProject)) return false;
+      }
+      // status filter (multi-select)
+      const statusFilter = filters.status;
+      if (statusFilter && statusFilter.length > 0) {
+        if (!statusFilter.includes(t.status)) return false;
+      }
+      // sprint filter (multi-select)
+      const sprintFilter = filters.sprint;
+      if (sprintFilter && sprintFilter.length > 0) {
+        if (!sprintFilter.includes(t.sprint)) return false;
+      }
+      // type filter (multi-select)
+      const typeFilter = filters.type;
+      if (typeFilter && typeFilter.length > 0) {
+        if (!typeFilter.includes(t.type)) return false;
       }
       return true;
     });
-  }, [allTasks, statusFilter, sprintFilter, ownerFilter, person, project, sprintProjects]);
+  }, [allTasks, filters, sprintProjects]);
 
   const taskIndex = useMemo(() => {
     const m = new Map<string, Task>();
@@ -267,27 +355,21 @@ export function useTasksData() {
     return Math.max(totalHours * pxPerHour, containerWidth);
   }, [timeRange, pxPerHour, containerWidth]);
 
-  const { sprintGroups, rowPositions, totalHeight } = useMemo(() => {
-    const sprintOrder: string[] = [];
-    const sprintMap = new Map<string, Task[]>();
-    for (const t of filteredTasks) {
-      if (!sprintMap.has(t.sprint)) {
-        sprintOrder.push(t.sprint);
-        sprintMap.set(t.sprint, []);
-      }
-      sprintMap.get(t.sprint)!.push(t);
-    }
-    for (const tasks of sprintMap.values()) {
-      tasks.sort((a, b) => a.taskNum - b.taskNum);
-    }
+  // Build Gantt groups based on primary groupBy dimension
+  const ganttGroups: GanttGroup[] = useMemo(
+    () => buildGanttGroups(filteredTasks, effectiveGroupBy[0], sprintProjects),
+    [filteredTasks, effectiveGroupBy, sprintProjects]
+  );
 
+  // Convert GanttGroups -> SprintGroup format for Gantt chart rendering
+  const { sprintGroups, rowPositions, totalHeight } = useMemo(() => {
     const rowPos = new Map<string, number>();
     let currentY = 0;
     const groups: SprintGroup[] = [];
 
-    for (const sprint of sprintOrder) {
-      const sprintTasks = sprintMap.get(sprint)!;
-      const collapsed = collapsedSprints.has(sprint);
+    for (const gg of ganttGroups) {
+      const sprintTasks = gg.tasks;
+      const collapsed = collapsedSprints.has(gg.groupKey);
       const done = sprintTasks.filter((t) => t.status === "green").length;
       const blocked = sprintTasks.filter((t) => t.status === "blocked").length;
       const spec = sprintTasks.find((t) => t.spec)?.spec ?? null;
@@ -303,7 +385,7 @@ export function useTasksData() {
       }
 
       groups.push({
-        sprint,
+        sprint: gg.label,
         tasks: sprintTasks,
         yStart: currentY,
         spec,
@@ -327,7 +409,7 @@ export function useTasksData() {
     }
 
     return { sprintGroups: groups, rowPositions: rowPos, totalHeight: currentY };
-  }, [filteredTasks, collapsedSprints]);
+  }, [ganttGroups, collapsedSprints]);
 
   // Project grouping
   const projectGroups: ProjectGroup[] = useMemo(
@@ -405,15 +487,6 @@ export function useTasksData() {
     setSelectedTaskKey(taskKey(sprint, taskNum));
   }, []);
 
-  const toggleStatus = useCallback((status: string) => {
-    setStatusFilter((prev) => {
-      const next = new Set(prev);
-      if (next.has(status)) next.delete(status);
-      else next.add(status);
-      return next;
-    });
-  }, []);
-
   const toggleSprint = useCallback((sprint: string) => {
     setCollapsedSprints((prev) => {
       const next = new Set(prev);
@@ -436,9 +509,6 @@ export function useTasksData() {
     error,
     allSprints,
     allOwners,
-    statusFilter,
-    sprintFilter,
-    ownerFilter,
     zoomPreset,
     setZoomPreset,
     scrollRef,
@@ -448,13 +518,17 @@ export function useTasksData() {
     taskIndex,
     timelineWidth,
     sprintGroups,
+    ganttGroups,
     rowPositions,
     totalHeight,
     ticks,
     nowPx,
     kpis,
+    // Global filter state
+    filters,
+    groupBy: effectiveGroupBy,
+    sortBy,
     // Grouping views
-    groupBy,
     projectGroups,
     developerGroups,
     timeInStatusMap,
@@ -462,16 +536,14 @@ export function useTasksData() {
     claimTask,
     unclaimTask,
     assignTask,
+    resolveStaleTasks,
     // Selection & navigation
     selectedTask,
     selectedTaskKey,
     setSelectedTaskKey,
     collapsedSprints,
     navigateToTask,
-    toggleStatus,
     toggleSprint,
-    setSprintFilter,
-    setOwnerFilter,
     timeToPx,
   };
 }

@@ -5,26 +5,26 @@ import { gql } from "@apollo/client/core";
 export const VELOCITY_QUERY = gql`
   query Velocity {
     developerLearningRate {
-      owner
-      sprint
+      owner { name }
+      sprint { name }
       tasks
       avgBlowUpRatio
     }
     phaseTimingDistribution {
-      sprint
+      sprint { name }
       taskNum
       phase
       seconds
       pctOfTotal
     }
     tokenEfficiencyTrend {
-      sprint
+      sprint { name }
       complexity
       tasks
       avgTokensPerTask
     }
     blowUpFactors {
-      sprint
+      sprint { name }
       taskNum
       title
       type
@@ -55,35 +55,35 @@ export const VELOCITY_QUERY = gql`
 export const SKILLS_QUERY = gql`
   query Skills {
     skillUsage {
-      toolName
+      skill { name }
       invocations
       sessions
       firstUsed
       lastUsed
     }
     skillTokenUsage {
-      skillName
-      sprint
+      skill { name }
+      sprint { name }
       invocations
       totalInputTokens
       totalOutputTokens
       avgTokensPerCall
     }
     skillDuration {
-      skillName
-      sprint
+      skill { name }
+      sprint { name }
       taskNum
       seconds
     }
     skillPrecision {
-      sprint
+      sprint { name }
       taskNum
       filesRead
       filesModified
       explorationRatio
     }
     skillVersionTokenUsage {
-      skillName
+      skill { name }
       skillVersion
       invocations
       totalInputTokens
@@ -91,7 +91,7 @@ export const SKILLS_QUERY = gql`
       avgTokensPerCall
     }
     skillVersionDuration {
-      skillName
+      skill { name }
       skillVersion
       invocations
       avgSeconds
@@ -99,7 +99,7 @@ export const SKILLS_QUERY = gql`
       maxSeconds
     }
     skillVersionPrecision {
-      skillName
+      skill { name }
       skillVersion
       tasks
       avgExplorationRatio
@@ -132,7 +132,7 @@ export const TEAM_QUERY = gql`
       }
     }
     developerQuality {
-      owner
+      owner { name }
       totalTasks
       totalReversions
       reversionsPerTask
@@ -140,13 +140,13 @@ export const TEAM_QUERY = gql`
       aGradePct
     }
     developerLearningRate {
-      owner
-      sprint
+      owner { name }
+      sprint { name }
       tasks
       avgBlowUpRatio
     }
     commonAuditFindings {
-      owner
+      owner { name }
       fakeTestIncidents
       patternViolations
       belowAGrade
@@ -161,8 +161,8 @@ export const STREAMS_QUERY = gql`
   query Streams {
     sessionTimeline {
       sessionId
-      developer
-      sprint
+      developer { name }
+      sprint { name }
       taskNum
       taskTitle
       skillName
@@ -266,14 +266,27 @@ export const ASSIGN_TASK_MUTATION = gql`
   }
 `;
 
+export const RESOLVE_STALE_TASKS_MUTATION = gql`
+  mutation ResolveStaleTasks {
+    resolveStaleTasks {
+      sprint
+      taskNum
+      status
+      owner {
+        name
+      }
+    }
+  }
+`;
+
 // ── Conversation Feed ────────────────────────────────────
 
 export const CONVERSATION_FEED_QUERY = gql`
   query ConversationFeed($limit: Int, $developer: String) {
     conversationFeed(limit: $limit, developer: $developer) {
       sessionId
-      developer
-      sprint
+      developer { name }
+      sprint { name }
       taskNum
       taskTitle
       startedAt

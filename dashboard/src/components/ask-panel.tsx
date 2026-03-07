@@ -15,7 +15,6 @@ import {
   useLocalRuntime,
   useThread,
   useThreadRuntime,
-  useMessagePart,
   ThreadPrimitive,
   ComposerPrimitive,
   MessagePrimitive,
@@ -126,11 +125,7 @@ function ThinkingBlock({ text }: { text: string }) {
   );
 }
 
-function SmartText() {
-  const part = useMessagePart();
-  const text =
-    part && "text" in part && typeof part.text === "string" ? part.text : "";
-
+function SmartText({ text }: { text: string }) {
   if (text.startsWith(THINKING_MARKER)) {
     const thinkingContent = text.slice(THINKING_MARKER.length);
     return <ThinkingBlock text={thinkingContent} />;
@@ -226,19 +221,18 @@ function AskThread() {
     <ThreadPrimitive.Root className="flex flex-col h-full min-h-0">
       <ThreadPrimitive.Viewport data-scroll-viewport className="flex-1 overflow-y-auto px-3 py-4 min-h-0">
         <ThreadPrimitive.Empty>
-          <div className="flex flex-col items-center justify-center h-full text-muted-foreground text-sm gap-2">
-            <p>What would you like to know?</p>
-            <div className="flex flex-col gap-1 text-xs">
-              <span className="text-muted-foreground/70">Try asking:</span>
+          <div className="flex flex-col items-center justify-center h-full text-muted-foreground text-sm px-2">
+            <p className="mb-3">What would you like to know?</p>
+            <div className="flex flex-col gap-1.5 w-full">
               {[
-                "How\u2019s the current sprint?",
-                "Who has capacity?",
-                "Show me today\u2019s activity",
+                "What tasks are blocked or at risk?",
+                "Show sprint burndown",
+                "Who\u2019s overloaded this week?",
               ].map((q) => (
                 <QuickAction
                   key={q}
                   text={q}
-                  className="text-left text-foreground/80 hover:text-foreground cursor-pointer"
+                  className="w-full text-left rounded-md border border-border px-3 py-2 text-xs text-foreground/80 hover:bg-secondary hover:text-foreground cursor-pointer transition-colors"
                 />
               ))}
             </div>
@@ -280,9 +274,9 @@ function FullscreenThread() {
               </h1>
               <div className="flex flex-col gap-2 w-full max-w-md">
                 {[
-                  "How\u2019s the current sprint going?",
-                  "Show me developer quality metrics",
-                  "What tasks are blocked right now?",
+                  "What tasks are blocked or at risk?",
+                  "Show sprint burndown",
+                  "Who\u2019s overloaded this week?",
                 ].map((q) => (
                   <QuickAction
                     key={q}
@@ -437,7 +431,7 @@ function PanelHeader({
   );
 
   return (
-    <div className="flex items-center justify-between border-b border-border px-3 py-2.5 flex-shrink-0">
+    <div className="flex items-center justify-between border-b border-border px-3 py-2 shrink-0">
       <div className="relative">
         <button
           onClick={() => setShowHistory((o) => !o)}
@@ -459,7 +453,7 @@ function PanelHeader({
           title="New chat"
           className="rounded-md p-1.5 text-muted-foreground hover:bg-secondary hover:text-foreground"
         >
-          <SquarePen size={15} />
+          <SquarePen size={14} />
         </button>
         {isFullscreen ? (
           <button
@@ -467,7 +461,7 @@ function PanelHeader({
             title="Minimize to panel"
             className="rounded-md p-1.5 text-muted-foreground hover:bg-secondary hover:text-foreground"
           >
-            <Minimize2 size={15} />
+            <Minimize2 size={14} />
           </button>
         ) : (
           <button
@@ -475,7 +469,7 @@ function PanelHeader({
             title="Open fullscreen"
             className="rounded-md p-1.5 text-muted-foreground hover:bg-secondary hover:text-foreground"
           >
-            <Maximize2 size={15} />
+            <Maximize2 size={14} />
           </button>
         )}
         <button
@@ -483,7 +477,7 @@ function PanelHeader({
           title="Close"
           className="rounded-md p-1.5 text-muted-foreground hover:bg-secondary hover:text-foreground"
         >
-          <X size={15} />
+          <X size={14} />
         </button>
       </div>
     </div>
@@ -537,15 +531,15 @@ export function AskContent({
 function ContextSync({ visibleDataSummary }: { visibleDataSummary?: string | null }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const filters = useMemo(() => parseFilterParams(searchParams), [searchParams]);
+  const parsed = useMemo(() => parseFilterParams(searchParams), [searchParams]);
 
   useEffect(() => {
     setAskAdapterContext({
       route: pathname,
-      filters,
+      filters: parsed,
       visibleDataSummary: visibleDataSummary ?? null,
     });
-  }, [pathname, filters, visibleDataSummary]);
+  }, [pathname, parsed, visibleDataSummary]);
 
   return null;
 }

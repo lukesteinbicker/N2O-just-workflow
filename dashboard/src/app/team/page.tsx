@@ -5,23 +5,53 @@ import { useQuery } from "@apollo/client/react";
 import { TEAM_QUERY } from "@/lib/graphql/queries";
 import { Card } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { PageFilterContext } from "@/lib/filter-dimensions";
+import { teamFilterConfig } from "./filter-config";
 
 export default function TeamPage() {
   const { data, loading, error } = useQuery<any>(TEAM_QUERY);
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-full text-muted-foreground">
-        Loading team data...
+      <PageFilterContext.Provider value={teamFilterConfig}>
+      <div className="space-y-4">
+        <h1 className="text-lg font-semibold">Team</h1>
+        <div className="grid grid-cols-2 gap-3">
+          {Array.from({ length: 2 }).map((_, i) => (
+            <div key={i} className="rounded-md border border-border bg-card p-3 space-y-3">
+              <div className="flex items-center gap-2">
+                <Skeleton className="h-4 w-28" />
+                <Skeleton className="h-3 w-16" />
+              </div>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+                {Array.from({ length: 6 }).map((_, j) => (
+                  <div key={j} className="flex justify-between">
+                    <Skeleton className="h-3 w-16" />
+                    <Skeleton className="h-3 w-12" />
+                  </div>
+                ))}
+              </div>
+              <div className="space-y-1">
+                <Skeleton className="h-2.5 w-20" />
+                <Skeleton className="h-2 w-full" />
+                <Skeleton className="h-2 w-full" />
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
+      </PageFilterContext.Provider>
     );
   }
 
   if (error) {
     return (
-      <div className="flex items-center justify-center h-full text-[#CD4246]">
-        Error: {error.message}
-      </div>
+      <PageFilterContext.Provider value={teamFilterConfig}>
+        <div className="flex items-center justify-center h-full text-[#CD4246]">
+          Error: {error.message}
+        </div>
+      </PageFilterContext.Provider>
     );
   }
 
@@ -31,17 +61,18 @@ export default function TeamPage() {
   const auditFindings = data?.commonAuditFindings ?? [];
 
   return (
+    <PageFilterContext.Provider value={teamFilterConfig}>
     <div className="space-y-4">
       <h1 className="text-lg font-semibold">Team</h1>
 
       <div className="grid grid-cols-2 gap-3">
         {developers.map((dev: any) => {
-          const q = quality.find((q: any) => q.owner === dev.name);
+          const q = quality.find((q: any) => q.owner?.name === dev.name);
           const rates = learningRate
-            .filter((r: any) => r.owner === dev.name)
-            .sort((a: any, b: any) => a.sprint.localeCompare(b.sprint));
+            .filter((r: any) => r.owner?.name === dev.name)
+            .sort((a: any, b: any) => (a.sprint?.name ?? "").localeCompare(b.sprint?.name ?? ""));
           const findings = auditFindings.find(
-            (f: any) => f.owner === dev.name
+            (f: any) => f.owner?.name === dev.name
           );
 
           return (
@@ -118,9 +149,9 @@ export default function TeamPage() {
                   </span>
                   <div className="flex items-center gap-2 mt-0.5">
                     {rates.map((r: any, i: number) => (
-                      <span key={r.sprint} className="text-[11px]">
+                      <span key={r.sprint?.name} className="text-[11px]">
                         <span className="text-muted-foreground">
-                          {r.sprint}:
+                          {r.sprint?.name}:
                         </span>{" "}
                         <span
                           className="font-mono font-bold"
@@ -229,5 +260,6 @@ export default function TeamPage() {
         })}
       </div>
     </div>
+    </PageFilterContext.Provider>
   );
 }

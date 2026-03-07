@@ -22,6 +22,13 @@ export interface Task {
   dependents: Dependency[];
 }
 
+/** Generic group for Gantt display — works for sprint, developer, status, or project grouping. */
+export interface GanttGroup {
+  label: string;
+  groupKey: string;
+  tasks: Task[];
+}
+
 /** A sprint's tasks grouped together (used in both status and project views). */
 export interface SprintTaskGroup {
   sprint: string;

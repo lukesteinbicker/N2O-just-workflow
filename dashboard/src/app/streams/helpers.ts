@@ -79,7 +79,7 @@ export function computeTimeline(sessions: Session[]) {
   const devMap = new Map<string, Session[]>();
 
   for (const s of sessions) {
-    const dev = s.developer ?? "unassigned";
+    const dev = s.developer?.name ?? "unassigned";
     if (!devMap.has(dev)) devMap.set(dev, []);
     devMap.get(dev)!.push(s);
   }

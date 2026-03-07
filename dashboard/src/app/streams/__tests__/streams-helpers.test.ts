@@ -15,8 +15,8 @@ const NOW = new Date("2025-06-15T12:00:00Z").getTime();
 function makeSession(overrides: Partial<Session> = {}): Session {
   return {
     sessionId: "sess-1",
-    developer: "alice",
-    sprint: "sprint-1",
+    developer: { name: "alice" },
+    sprint: { name: "sprint-1" },
     taskNum: 1,
     taskTitle: "Build login page",
     skillName: "tdd-agent",
@@ -46,9 +46,9 @@ describe("computeStreamKpis", () => {
 
   it("counts active sessions (endedAt === null)", () => {
     const sessions = [
-      makeSession({ sessionId: "s1", endedAt: null, developer: "alice" }),
-      makeSession({ sessionId: "s2", endedAt: "2025-06-15T11:00:00Z", developer: "bob" }),
-      makeSession({ sessionId: "s3", endedAt: null, developer: "carol" }),
+      makeSession({ sessionId: "s1", endedAt: null, developer: { name: "alice" } }),
+      makeSession({ sessionId: "s2", endedAt: "2025-06-15T11:00:00Z", developer: { name: "bob" } }),
+      makeSession({ sessionId: "s3", endedAt: null, developer: { name: "carol" } }),
     ];
     const kpis = computeStreamKpis(sessions, NOW);
     expect(kpis.activeSessions).toBe(2);
@@ -56,10 +56,10 @@ describe("computeStreamKpis", () => {
 
   it("counts unique online developers with active sessions", () => {
     const sessions = [
-      makeSession({ sessionId: "s1", endedAt: null, developer: "alice" }),
-      makeSession({ sessionId: "s2", endedAt: null, developer: "alice" }),
-      makeSession({ sessionId: "s3", endedAt: null, developer: "bob" }),
-      makeSession({ sessionId: "s4", endedAt: "2025-06-15T11:00:00Z", developer: "carol" }),
+      makeSession({ sessionId: "s1", endedAt: null, developer: { name: "alice" } }),
+      makeSession({ sessionId: "s2", endedAt: null, developer: { name: "alice" } }),
+      makeSession({ sessionId: "s3", endedAt: null, developer: { name: "bob" } }),
+      makeSession({ sessionId: "s4", endedAt: "2025-06-15T11:00:00Z", developer: { name: "carol" } }),
     ];
     const kpis = computeStreamKpis(sessions, NOW);
     expect(kpis.onlineDevs).toBe(2); // alice and bob (carol's session ended)
@@ -199,9 +199,9 @@ describe("filterSessionsByTimestamp", () => {
 describe("groupSessionsByDeveloper", () => {
   it("groups sessions by developer name", () => {
     const sessions = [
-      makeSession({ sessionId: "s1", developer: "alice" }),
-      makeSession({ sessionId: "s2", developer: "bob" }),
-      makeSession({ sessionId: "s3", developer: "alice" }),
+      makeSession({ sessionId: "s1", developer: { name: "alice" } }),
+      makeSession({ sessionId: "s2", developer: { name: "bob" } }),
+      makeSession({ sessionId: "s3", developer: { name: "alice" } }),
     ];
     const groups = groupSessionsByDeveloper(sessions);
     expect(groups).toHaveLength(2);
@@ -213,9 +213,9 @@ describe("groupSessionsByDeveloper", () => {
 
   it("sorts groups alphabetically by developer name", () => {
     const sessions = [
-      makeSession({ sessionId: "s1", developer: "charlie" }),
-      makeSession({ sessionId: "s2", developer: "alice" }),
-      makeSession({ sessionId: "s3", developer: "bob" }),
+      makeSession({ sessionId: "s1", developer: { name: "charlie" } }),
+      makeSession({ sessionId: "s2", developer: { name: "alice" } }),
+      makeSession({ sessionId: "s3", developer: { name: "bob" } }),
     ];
     const groups = groupSessionsByDeveloper(sessions);
     expect(groups.map((g) => g.developer)).toEqual(["alice", "bob", "charlie"]);
@@ -224,7 +224,7 @@ describe("groupSessionsByDeveloper", () => {
   it("groups null developer as 'unassigned'", () => {
     const sessions = [
       makeSession({ sessionId: "s1", developer: null }),
-      makeSession({ sessionId: "s2", developer: "alice" }),
+      makeSession({ sessionId: "s2", developer: { name: "alice" } }),
     ];
     const groups = groupSessionsByDeveloper(sessions);
     expect(groups.map((g) => g.developer)).toContain("unassigned");
@@ -238,8 +238,8 @@ describe("groupSessionsByDeveloper", () => {
 
   it("includes sessionCount in each group", () => {
     const sessions = [
-      makeSession({ sessionId: "s1", developer: "alice" }),
-      makeSession({ sessionId: "s2", developer: "alice" }),
+      makeSession({ sessionId: "s1", developer: { name: "alice" } }),
+      makeSession({ sessionId: "s2", developer: { name: "alice" } }),
     ];
     const groups = groupSessionsByDeveloper(sessions);
     expect(groups[0].sessionCount).toBe(2);
@@ -253,13 +253,13 @@ describe("computeChartData", () => {
     const sessions = [
       makeSession({
         sessionId: "s1",
-        developer: "alice",
+        developer: { name: "alice" },
         startedAt: "2025-06-15T08:00:00Z",
         endedAt: "2025-06-15T10:00:00Z",
       }),
       makeSession({
         sessionId: "s2",
-        developer: "bob",
+        developer: { name: "bob" },
         startedAt: "2025-06-15T09:00:00Z",
         endedAt: "2025-06-15T11:00:00Z",
       }),
@@ -278,13 +278,13 @@ describe("computeChartData", () => {
     const sessions = [
       makeSession({
         sessionId: "s1",
-        developer: "alice",
+        developer: { name: "alice" },
         startedAt: "2025-06-15T08:00:00Z",
         endedAt: "2025-06-15T10:00:00Z",
       }),
       makeSession({
         sessionId: "s2",
-        developer: "bob",
+        developer: { name: "bob" },
         startedAt: "2025-06-15T09:00:00Z",
         endedAt: "2025-06-15T11:00:00Z",
       }),

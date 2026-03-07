@@ -5,9 +5,10 @@ interface KpiCardProps {
   value: string | number;
   delta?: string;
   deltaType?: "positive" | "negative" | "neutral";
+  onDeltaClick?: () => void;
 }
 
-export function KpiCard({ label, value, delta, deltaType }: KpiCardProps) {
+export function KpiCard({ label, value, delta, deltaType, onDeltaClick }: KpiCardProps) {
   const deltaColor =
     deltaType === "positive"
       ? "text-[#238551]"
@@ -23,11 +24,18 @@ export function KpiCard({ label, value, delta, deltaType }: KpiCardProps) {
       <span className="text-xs text-muted-foreground uppercase tracking-wide">
         {label}
       </span>
-      {delta && (
+      {delta && onDeltaClick ? (
+        <button
+          onClick={onDeltaClick}
+          className={`text-xs font-mono ${deltaColor} text-left hover:underline cursor-pointer`}
+        >
+          {delta}
+        </button>
+      ) : delta ? (
         <span className={`text-xs font-mono ${deltaColor}`} data-mono>
           {delta}
         </span>
-      )}
+      ) : null}
     </Card>
   );
 }

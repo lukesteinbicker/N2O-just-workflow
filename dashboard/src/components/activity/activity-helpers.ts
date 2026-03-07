@@ -12,8 +12,8 @@ export type ActivityMessage = {
 
 export type ActivitySession = {
   sessionId: string;
-  developer: string | null;
-  sprint: string | null;
+  developer: { name: string } | null;
+  sprint: { name: string } | null;
   taskNum: number | null;
   taskTitle: string | null;
   startedAt: string | null;

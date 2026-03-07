@@ -2,7 +2,7 @@
 // time-in-status, blow-up ratio, and dependency chips.
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
 import {
   Table,
@@ -13,6 +13,7 @@ import {
   TableCell,
 } from "@/components/ui/table";
 import type { Task } from "./types";
+import type { SortClause } from "@/lib/filter-dimensions";
 import {
   STATUS_COLORS,
   STATUS_LABELS,
@@ -21,6 +22,7 @@ import {
 } from "./helpers";
 import {
   sortTasks,
+  multiSortTasks,
   isTaskClaimable,
   type SortColumn,
   type SortDirection,
@@ -31,6 +33,7 @@ interface TaskTableProps {
   taskIndex: Map<string, Task>;
   timeInStatusMap: Map<string, string>;
   allOwners: string[];
+  sortByClauses?: SortClause[];
   onSelectTask: (key: string) => void;
   claimTask: (sprint: string, taskNum: number, developer: string) => void;
   unclaimTask: (sprint: string, taskNum: number) => void;
@@ -53,6 +56,7 @@ export function TaskTable({
   taskIndex,
   timeInStatusMap,
   allOwners,
+  sortByClauses,
   onSelectTask,
   claimTask,
   unclaimTask,
@@ -71,7 +75,13 @@ export function TaskTable({
     }
   };
 
-  const sorted = sortTasks(tasks, sortColumn, sortDirection, timeInStatusMap);
+  // Use global sort clauses if available, otherwise fall back to local column sort
+  const sorted = useMemo(() => {
+    if (sortByClauses && sortByClauses.length > 0) {
+      return multiSortTasks(tasks, sortByClauses, timeInStatusMap);
+    }
+    return sortTasks(tasks, sortColumn, sortDirection, timeInStatusMap);
+  }, [tasks, sortByClauses, sortColumn, sortDirection, timeInStatusMap]);
 
   return (
     <Card className="p-3 bg-card border-border overflow-hidden" data-testid="task-table">
@@ -228,7 +238,6 @@ export function TaskTable({
                           }}
                           onClick={(e) => {
                             e.stopPropagation();
-                            // For claim, prompt for developer name or use first available owner
                             const dev = allOwners[0] ?? "unknown";
                             claimTask(t.sprint, t.taskNum, dev);
                           }}

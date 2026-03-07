@@ -12,17 +12,23 @@ const DEVELOPER_NAME =
 // Marker prefix for thinking blocks so the UI can detect and render them differently
 export const THINKING_MARKER = "<<THINKING>>\n";
 
+import type { SortClause } from "@/lib/filter-dimensions";
+
 /** Mutable context that React components update before each API call. */
 export interface AskAdapterContext {
   route: string;
-  filters: { person: string | null; project: string | null; groupBy: string };
+  filters: {
+    filters: Record<string, string[]>;
+    groupBy: string[];
+    sortBy: SortClause[];
+  };
   visibleDataSummary: string | null;
 }
 
 /** Current context state — set by components via setAskAdapterContext(). */
 let currentContext: AskAdapterContext = {
   route: "/",
-  filters: { person: null, project: null, groupBy: "project" },
+  filters: { filters: {}, groupBy: [], sortBy: [] },
   visibleDataSummary: null,
 };
 

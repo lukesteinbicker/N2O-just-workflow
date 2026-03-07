@@ -56,13 +56,13 @@ export function SessionBar({ session: s, rangeStart, totalRange, now, showModelB
           }}
         >
           <span className="text-[11px] text-white truncate leading-none">{title}</span>
-          {s.sprint && s.taskNum != null && widthPct > 12 && (
+          {s.sprint?.name && s.taskNum != null && widthPct > 12 && (
             <span
               className="text-[9px] px-1 py-0 rounded-sm shrink-0 leading-none font-mono"
               style={{ backgroundColor: "rgba(0,0,0,0.3)", color: "#A7B6C2" }}
               data-mono
             >
-              {s.sprint} #{s.taskNum}
+              {s.sprint?.name} #{s.taskNum}
             </span>
           )}
           {s.skillName && widthPct > 12 && (
@@ -102,9 +102,9 @@ export function SessionBar({ session: s, rangeStart, totalRange, now, showModelB
           <div className="text-xs font-semibold">
             {s.taskTitle ?? s.sessionId.slice(0, 12)}
           </div>
-          {s.sprint && s.taskNum != null && (
+          {s.sprint?.name && s.taskNum != null && (
             <div className="text-[11px] text-muted-foreground">
-              {s.sprint} #{s.taskNum}
+              {s.sprint?.name} #{s.taskNum}
             </div>
           )}
 

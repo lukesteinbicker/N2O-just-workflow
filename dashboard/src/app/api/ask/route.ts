@@ -147,7 +147,7 @@ export async function POST(request: Request) {
     messages: Array<{ role: "user" | "assistant"; content: string }>;
     developer?: string;
     route?: string;
-    filters?: { person: string | null; project: string | null; groupBy: string };
+    filters?: { filters: Record<string, string[]>; groupBy: string[]; sortBy: Array<{ key: string; direction: "asc" | "desc" }> };
     visibleDataSummary?: string | null;
     pastChats?: Array<{ id: string; title: string; createdAt: string; messages?: Array<{ role: string; content: string }> }>;
   };
@@ -182,7 +182,7 @@ export async function POST(request: Request) {
   const askContext: AskContext = {
     date: now,
     route: clientRoute || "/",
-    filters: clientFilters || { person: null, project: null, groupBy: "project" },
+    filters: clientFilters || { filters: {}, groupBy: [], sortBy: [] },
     visibleDataSummary: visibleDataSummary || null,
   };
   const contextSection = buildContextPrompt(askContext);

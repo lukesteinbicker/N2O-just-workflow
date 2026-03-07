@@ -5,13 +5,15 @@
  * visible data, past chats) into formatted strings for the system prompt.
  */
 
+import type { SortClause } from "@/lib/filter-dimensions";
+
 export interface AskContext {
   date: string;
   route: string;
   filters: {
-    person: string | null;
-    project: string | null;
-    groupBy: string;
+    filters: Record<string, string[]>;
+    groupBy: string[];
+    sortBy: SortClause[];
   };
   visibleDataSummary: string | null;
 }
@@ -37,11 +39,26 @@ export function buildContextPrompt(ctx: AskContext): string {
 
   // Filters
   const activeFilters: string[] = [];
-  if (ctx.filters.person) activeFilters.push(`person: ${ctx.filters.person}`);
-  if (ctx.filters.project)
-    activeFilters.push(`project: ${ctx.filters.project}`);
-  if (ctx.filters.groupBy && ctx.filters.groupBy !== "project")
-    activeFilters.push(`grouped by: ${ctx.filters.groupBy}`);
+
+  // Multi-select filters
+  for (const [dim, values] of Object.entries(ctx.filters.filters)) {
+    if (values.length > 0) {
+      activeFilters.push(`${dim}: ${values.join(", ")}`);
+    }
+  }
+
+  // Group-by
+  if (ctx.filters.groupBy.length > 0) {
+    activeFilters.push(`grouped by: ${ctx.filters.groupBy.join(" > ")}`);
+  }
+
+  // Sort-by
+  if (ctx.filters.sortBy.length > 0) {
+    const sortDesc = ctx.filters.sortBy
+      .map((s) => `${s.key} ${s.direction}`)
+      .join(", ");
+    activeFilters.push(`sorted by: ${sortDesc}`);
+  }
 
   if (activeFilters.length > 0) {
     lines.push(`Active filters: ${activeFilters.join(", ")}`);

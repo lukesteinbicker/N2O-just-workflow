@@ -48,7 +48,7 @@ function fmtDuration(startedAt: string | null, endedAt: string | null): string {
 
 function sessionLabel(s: ActivitySession): string {
   const parts: string[] = [];
-  if (s.sprint) parts.push(`${s.sprint}${s.taskNum != null ? `#${s.taskNum}` : ""}`);
+  if (s.sprint?.name) parts.push(`${s.sprint.name}${s.taskNum != null ? `#${s.taskNum}` : ""}`);
   if (s.taskTitle) parts.push(s.taskTitle);
   if (!parts.length) {
     const firstPrompt = s.messages.find((m) => m.role === "user" && m.content?.trim())?.content;
@@ -97,7 +97,8 @@ export function ActivityPanel({
   onFullscreen,
   onMinimize,
 }: ActivityPanelProps) {
-  const { person } = useGlobalFilters();
+  const { filters } = useGlobalFilters();
+  const person = filters.person?.[0] ?? null;
   const isFullscreen = mode === "fullscreen";
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Turbopack requires <any> for Apollo hooks
@@ -201,7 +202,7 @@ export function ActivityPanel({
   // Loading state
   if (loading && !data) {
     return (
-      <div className={`flex flex-col h-full bg-[#1C2127] ${!isFullscreen ? "border-l border-border" : ""}`}>
+      <div className={`flex flex-col h-full bg-background ${!isFullscreen ? "border-l border-border" : ""}`}>
         <PanelHeader
           mode={mode}
           sessionCount={0}
@@ -211,7 +212,7 @@ export function ActivityPanel({
         />
         <div className="flex-1 p-4 space-y-2">
           {Array.from({ length: 5 }).map((_, i) => (
-            <div key={i} className="flex items-center gap-2 px-4 py-1.5 bg-[#252A31] rounded-sm">
+            <div key={i} className="flex items-center gap-2 px-4 py-1.5 bg-card rounded-sm">
               <Skeleton className="h-3 w-3 shrink-0" />
               <Skeleton className="h-3 flex-1" />
               <Skeleton className="h-3 w-20 shrink-0" />
@@ -225,7 +226,7 @@ export function ActivityPanel({
   // Error state
   if (error) {
     return (
-      <div className={`flex flex-col h-full bg-[#1C2127] ${!isFullscreen ? "border-l border-border" : ""}`}>
+      <div className={`flex flex-col h-full bg-background ${!isFullscreen ? "border-l border-border" : ""}`}>
         <PanelHeader
           mode={mode}
           sessionCount={0}
@@ -241,7 +242,7 @@ export function ActivityPanel({
   }
 
   return (
-    <div className={`flex flex-col h-full bg-[#1C2127] ${!isFullscreen ? "border-l border-border" : ""}`}>
+    <div className={`flex flex-col h-full bg-background ${!isFullscreen ? "border-l border-border" : ""}`}>
       {/* Header */}
       <PanelHeader
         mode={mode}
@@ -255,9 +256,9 @@ export function ActivityPanel({
       />
 
       {/* Filter bar */}
-      <div className="px-3 py-2 border-b border-border/30 bg-[#252A31] space-y-1.5">
+      <div className="px-3 py-2 border-b border-border/30 bg-card space-y-1.5">
         {/* Search input */}
-        <div className="flex items-center gap-1.5 bg-[#1C2127] rounded-sm border border-border/30 px-2 py-1">
+        <div className="flex items-center gap-1.5 bg-background rounded-sm border border-border/30 px-2 py-1">
           <Search size={12} className="text-muted-foreground/50 shrink-0" />
           <input
             type="text"
@@ -280,7 +281,7 @@ export function ActivityPanel({
         <div className="flex items-center gap-1.5">
           {/* Tool type dropdown */}
           <select
-            className="text-[10px] bg-[#1C2127] border border-border/30 rounded-sm px-1.5 py-0.5 text-foreground leading-none"
+            className="text-[10px] bg-background border border-border/30 rounded-sm px-1.5 py-0.5 text-foreground leading-none"
             value={toolTypeFilter}
             onChange={(e) => setToolTypeFilter(e.target.value)}
           >
@@ -295,7 +296,7 @@ export function ActivityPanel({
             type="date"
             value={dateStart}
             onChange={(e) => setDateStart(e.target.value)}
-            className="text-[10px] bg-[#1C2127] border border-border/30 rounded-sm px-1.5 py-0.5 text-foreground leading-none"
+            className="text-[10px] bg-background border border-border/30 rounded-sm px-1.5 py-0.5 text-foreground leading-none"
             placeholder="From"
           />
           <span className="text-[10px] text-muted-foreground/40">&ndash;</span>
@@ -303,7 +304,7 @@ export function ActivityPanel({
             type="date"
             value={dateEnd}
             onChange={(e) => setDateEnd(e.target.value)}
-            className="text-[10px] bg-[#1C2127] border border-border/30 rounded-sm px-1.5 py-0.5 text-foreground leading-none"
+            className="text-[10px] bg-background border border-border/30 rounded-sm px-1.5 py-0.5 text-foreground leading-none"
             placeholder="To"
           />
 
@@ -341,7 +342,7 @@ export function ActivityPanel({
           dateGroups.map((dg) => (
             <div key={dg.dateKey}>
               <div
-                className="sticky top-0 z-20 px-4 text-[11px] font-semibold text-muted-foreground bg-[#1C2127] border-b border-border/30 flex items-center"
+                className="sticky top-0 z-20 px-4 text-[11px] font-semibold text-muted-foreground bg-background border-b border-border/30 flex items-center"
                 style={{ height: DATE_HEADER_H }}
               >
                 {dg.date}
@@ -387,7 +388,7 @@ function PanelHeader({
   const isFullscreen = mode === "fullscreen";
 
   return (
-    <div className="flex items-center gap-2 px-3 py-2 shrink-0 border-b border-border/40 bg-[#252A31]">
+    <div className="flex items-center gap-2 px-3 py-2 shrink-0 border-b border-border">
       <h2 className="text-sm font-semibold leading-none">Activity</h2>
       <span className="text-xs text-muted-foreground font-mono leading-none">
         {sessionCount} Session{sessionCount !== 1 ? "s" : ""}
@@ -416,7 +417,7 @@ function PanelHeader({
           <button
             onClick={onMinimize}
             title="Minimize to panel"
-            className="rounded-md p-1 text-muted-foreground hover:bg-secondary hover:text-foreground"
+            className="rounded-md p-1.5 text-muted-foreground hover:bg-secondary hover:text-foreground"
           >
             <Minimize2 size={14} />
           </button>
@@ -424,7 +425,7 @@ function PanelHeader({
           <button
             onClick={onFullscreen}
             title="Open fullscreen"
-            className="rounded-md p-1 text-muted-foreground hover:bg-secondary hover:text-foreground"
+            className="rounded-md p-1.5 text-muted-foreground hover:bg-secondary hover:text-foreground"
           >
             <Maximize2 size={14} />
           </button>
@@ -432,7 +433,7 @@ function PanelHeader({
         <button
           onClick={onClose}
           title="Close"
-          className="rounded-md p-1 text-muted-foreground hover:bg-secondary hover:text-foreground"
+          className="rounded-md p-1.5 text-muted-foreground hover:bg-secondary hover:text-foreground"
         >
           <X size={14} />
         </button>
@@ -458,7 +459,7 @@ function SessionBlock({
   return (
     <div className="border-b border-border/15">
       <div
-        className="sticky z-10 flex items-center gap-2 px-4 py-1.5 bg-[#252A31] border-b border-border/15 cursor-pointer select-none hover:bg-[#2A3038] transition-colors"
+        className="sticky z-10 flex items-center gap-2 px-4 py-1.5 bg-card border-b border-border/15 cursor-pointer select-none hover:bg-secondary transition-colors"
         style={{ top: DATE_HEADER_H }}
         onClick={onToggle}
       >
@@ -485,7 +486,7 @@ function SessionBlock({
       {expanded && (
         <div className="py-0.5">
           {session.messages.map((msg, i) => (
-            <MessageRow key={i} message={msg} developer={session.developer} />
+            <MessageRow key={i} message={msg} developer={session.developer?.name ?? null} />
           ))}
         </div>
       )}
