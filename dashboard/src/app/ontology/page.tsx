@@ -12,7 +12,7 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import dynamic from "next/dynamic";
 import { useQuery } from "@apollo/client/react";
-import { LayoutGrid, Share2, X, ZoomIn, ZoomOut, Maximize2, Pin } from "lucide-react";
+import { LayoutGrid, Share2, X, ZoomIn, ZoomOut, Maximize2, Pin, Settings } from "lucide-react";
 import { DATA_HEALTH_QUERY } from "@/lib/graphql/queries";
 import { parseSchemaToGraph, aggregateEdges, type IntrospectionType } from "./schema-parser";
 import { getHealthStatus, STREAM_ENTITY_MAP } from "./health-status";
@@ -40,6 +40,8 @@ export default function OntologyPage() {
   const [activeAdapter, setActiveAdapter] = useState<"graphql" | "sql">("graphql");
   const [sqlContent, setSqlContent] = useState("");
   const [showSqlInput, setShowSqlInput] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const settingsRef = useRef<HTMLDivElement>(null);
 
   const adapter = activeAdapter === "graphql" ? graphqlAdapter : postgresqlAdapter;
   const CATEGORY_CONFIG = adapter.getCategoryConfig();
@@ -53,6 +55,15 @@ export default function OntologyPage() {
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
+
+  useEffect(() => {
+    if (!settingsOpen) return;
+    const handleClick = (e: MouseEvent) => {
+      if (settingsRef.current && !settingsRef.current.contains(e.target as Node)) setSettingsOpen(false);
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [settingsOpen]);
 
   const isSqlMode = activeAdapter === "sql";
 
@@ -174,23 +185,6 @@ export default function OntologyPage() {
         <div className="h-[44px] border-b border-border px-4 flex items-center justify-between flex-shrink-0 bg-card">
           <div className="flex items-center gap-3">
             <h1 className="text-sm font-semibold text-foreground">Ontology Explorer</h1>
-
-            {/* Adapter selector */}
-            <select
-              value={activeAdapter}
-              onChange={(e) => {
-                const next = e.target.value as "graphql" | "sql";
-                setActiveAdapter(next);
-                setSelectedNode(null);
-                setActiveCategoryFilter(null);
-                if (next === "sql") setShowSqlInput(true);
-              }}
-              className="h-7 rounded border border-border bg-background px-2 text-xs text-foreground"
-            >
-              <option value="graphql">GraphQL</option>
-              <option value="sql">SQL</option>
-            </select>
-
             <span className="text-xs text-muted-foreground">{filteredNodes.length} types</span>
             {activeCategoryFilter && CATEGORY_CONFIG[activeCategoryFilter] && (
               <button
@@ -204,6 +198,54 @@ export default function OntologyPage() {
             )}
           </div>
           <div className="flex items-center gap-1">
+            {/* Settings gear popover */}
+            <div ref={settingsRef} className="relative">
+              <button
+                onClick={() => setSettingsOpen((v) => !v)}
+                className={`flex h-7 w-7 items-center justify-center rounded transition-colors ${
+                  settingsOpen ? "bg-[#2D72D2] text-white" : "text-muted-foreground hover:text-foreground hover:bg-[#394B59]"
+                }`}
+                title="Settings"
+              >
+                <Settings size={14} />
+              </button>
+              {settingsOpen && (
+                <div className="absolute right-0 top-full mt-1 z-50 w-48 rounded-md border border-border bg-card p-3 shadow-lg">
+                  <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Schema Source</span>
+                  <div className="mt-2 flex flex-col gap-1">
+                    {([["graphql", "GraphQL"], ["sql", "SQL"]] as const).map(([value, label]) => (
+                      <button
+                        key={value}
+                        onClick={() => {
+                          if (value !== activeAdapter) {
+                            setActiveAdapter(value);
+                            setSelectedNode(null);
+                            setActiveCategoryFilter(null);
+                            if (value === "sql") setShowSqlInput(true);
+                          }
+                          setSettingsOpen(false);
+                        }}
+                        className={`flex items-center gap-2 rounded px-2 py-1.5 text-xs transition-colors ${
+                          activeAdapter === value
+                            ? "bg-[#2D72D2]/20 text-[#4C90F0]"
+                            : "text-foreground hover:bg-[#394B59]"
+                        }`}
+                      >
+                        <span className={`h-3 w-3 rounded-full border-2 flex items-center justify-center ${
+                          activeAdapter === value ? "border-[#2D72D2]" : "border-muted-foreground"
+                        }`}>
+                          {activeAdapter === value && <span className="h-1.5 w-1.5 rounded-full bg-[#2D72D2]" />}
+                        </span>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="mx-0.5 h-4 w-px bg-border" />
+
             {([["list", LayoutGrid], ["graph", Share2]] as const).map(([mode, Icon]) => (
               <button
                 key={mode}
