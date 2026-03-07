@@ -1,7 +1,7 @@
 // Resolver composition: merges domain resolver modules into the root GraphQL resolver map.
 import type { Context } from "../context.js";
 import { queryAll } from "../db-adapter.js";
-import { mapEvent, mapTranscript } from "./mappers.js";
+import { mapEvent, mapTranscript, mapSprint, mapDeveloper, mapTask } from "./mappers.js";
 import { taskResolvers } from "./task.js";
 import { sprintResolvers } from "./sprint.js";
 import { projectResolvers } from "./project.js";
@@ -10,6 +10,45 @@ import { mutationResolvers } from "./mutations.js";
 import { analyticsResolvers } from "./analytics.js";
 import { conversationResolvers } from "./conversation.js";
 import { healthResolvers } from "./health.js";
+
+// ── Type resolver factories for typed object references ────────────────
+
+const resolveSkill = (parent: any) => {
+  const name = parent._skillName;
+  if (!name) return null;
+  return { name };
+};
+
+const resolveSampleTasks = (filterField: string) => async (parent: any, _: any, ctx: Context) => {
+  const value = parent[filterField];
+  if (!value) return [];
+  const rows = await queryAll(
+    ctx.db,
+    `SELECT * FROM tasks WHERE ${filterField === "type" ? "type" : "complexity"} = ? ORDER BY completed_at DESC LIMIT 5`,
+    [value]
+  );
+  return rows.map(mapTask);
+};
+
+const resolveSprint = async (parent: any, _: any, ctx: Context) => {
+  if (!parent._sprint) return null;
+  const row = await ctx.loaders.sprint.load(parent._sprint);
+  return row ? mapSprint(row) : { name: parent._sprint, status: "unknown" };
+};
+
+const resolveDeveloper = (field: string) => async (parent: any, _: any, ctx: Context) => {
+  const val = parent[field];
+  if (!val) return null;
+  const row = await ctx.loaders.developer.load(val);
+  if (row) return mapDeveloper(row);
+  return { name: val, fullName: val, role: null };
+};
+
+const resolveTask = async (parent: any, _: any, ctx: Context) => {
+  if (!parent._sprint || parent._taskNum == null) return null;
+  const row = await ctx.loaders.task.load(`${parent._sprint}|${parent._taskNum}`);
+  return row ? mapTask(row) : null;
+};
 
 // Standalone query resolvers for events, transcripts, activity
 const standaloneResolvers = {
@@ -166,10 +205,11 @@ const standaloneResolvers = {
         return {
           id: row.id,
           timestamp: row.timestamp,
-          developer: row.developer || null,
+          _developer: row.developer || null,
           action: row.event_type,
-          sprint: row.sprint,
+          _sprint: row.sprint,
           taskNum: row.task_num,
+          _taskNum: row.task_num,
           summary,
           metadata: typeof row.metadata === "string" ? row.metadata : row.metadata != null ? JSON.stringify(row.metadata) : null,
           sessionId: row.session_id,
@@ -199,4 +239,32 @@ export const resolvers = {
   Sprint: sprintResolvers.Sprint,
   Project: projectResolvers.Project,
   Developer: developerResolvers.Developer,
+
+  // ── Typed object reference resolvers ──────────────────────
+  Event: { sprint: resolveSprint, task: resolveTask },
+  Transcript: { sprint: resolveSprint, task: resolveTask },
+  Activity: { developer: resolveDeveloper("_developer"), sprint: resolveSprint, task: resolveTask },
+  DeveloperSkill: { developer: resolveDeveloper("_developer") },
+  DeveloperContext: { developer: resolveDeveloper("_developer") },
+  Availability: { developer: resolveDeveloper("_developer") },
+  SessionConversation: { developer: resolveDeveloper("_developer"), sprint: resolveSprint, task: resolveTask },
+  LearningRate: { owner: resolveDeveloper("_owner"), sprint: resolveSprint },
+  SkillUsage: { skill: resolveSkill },
+  SkillTokenUsage: { skill: resolveSkill, sprint: resolveSprint },
+  SkillDuration: { skill: resolveSkill, sprint: resolveSprint, task: resolveTask },
+  SkillPrecision: { sprint: resolveSprint, task: resolveTask },
+  SkillVersionTokenUsage: { skill: resolveSkill },
+  SkillVersionDuration: { skill: resolveSkill },
+  SkillVersionPrecision: { skill: resolveSkill },
+  PhaseTimingDistribution: { sprint: resolveSprint, task: resolveTask },
+  BlowUpFactor: { sprint: resolveSprint, task: resolveTask },
+  EstimationAccuracy: { owner: resolveDeveloper("_owner") },
+  EstimationAccuracyByType: { sampleTasks: resolveSampleTasks("type") },
+  EstimationAccuracyByComplexity: { sampleTasks: resolveSampleTasks("complexity") },
+  DeveloperQuality: { owner: resolveDeveloper("_owner") },
+  AuditFindings: { owner: resolveDeveloper("_owner") },
+  ReversionHotspot: { sampleTasks: resolveSampleTasks("type") },
+  SprintVelocity: { sprint: resolveSprint },
+  SessionTimelineEntry: { developer: resolveDeveloper("_developer"), sprint: resolveSprint, task: resolveTask },
+  TokenEfficiency: { sprint: resolveSprint },
 };

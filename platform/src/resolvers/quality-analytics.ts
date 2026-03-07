@@ -38,7 +38,7 @@ export const qualityQueryResolvers = {
       params
     );
     return rows.map((row: any) => ({
-      owner: row.owner,
+      _owner: row.owner,
       totalTasks: parseInt(row.total_tasks),
       totalReversions: parseInt(row.total_reversions),
       reversionsPerTask: row.reversions_per_task ? parseFloat(row.reversions_per_task) : null,
@@ -82,7 +82,7 @@ export const qualityQueryResolvers = {
       params
     );
     return rows.map((row: any) => ({
-      owner: row.owner,
+      _owner: row.owner,
       fakeTestIncidents: parseInt(row.fake_test_incidents),
       patternViolations: parseInt(row.pattern_violations),
       belowAGrade: parseInt(row.below_a_grade),
@@ -193,9 +193,10 @@ function mapSessionEntry(
   return {
     sessionId: row.session_id,
     parentSessionId: row.parent_session_id ?? null,
-    developer: row.developer ?? null,
-    sprint: row.sprint,
+    _developer: row.developer ?? null,
+    _sprint: row.sprint,
     taskNum: row.task_num,
+    _taskNum: row.task_num,
     taskTitle: row.task_title ?? null,
     skillName: row.skill_name ?? null,
     startedAt: row.started_at,

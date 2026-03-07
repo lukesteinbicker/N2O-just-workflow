@@ -66,10 +66,16 @@ export const analyticsTypeDefs = `#graphql
     sessionTimeline(developer: String, dateFrom: String, dateTo: String): [SessionTimelineEntry!]!
   }
 
+  # ── Skill Entity ────────────────────────────────────────────────────
+
+  type Skill {
+    name: String!
+  }
+
   # ── Skill Types ────────────────────────────────────────────────────
 
   type SkillUsage {
-    toolName: String!
+    skill: Skill!
     invocations: Int!
     sessions: Int!
     firstUsed: String
@@ -77,8 +83,8 @@ export const analyticsTypeDefs = `#graphql
   }
 
   type SkillTokenUsage {
-    skillName: String
-    sprint: String
+    skill: Skill
+    sprint: Sprint
     invocations: Int!
     totalInputTokens: Int!
     totalOutputTokens: Int!
@@ -86,7 +92,7 @@ export const analyticsTypeDefs = `#graphql
   }
 
   type SkillVersionTokenUsage {
-    skillName: String
+    skill: Skill
     skillVersion: String
     invocations: Int!
     totalInputTokens: Int!
@@ -95,14 +101,15 @@ export const analyticsTypeDefs = `#graphql
   }
 
   type SkillDuration {
-    skillName: String
-    sprint: String
+    skill: Skill
+    sprint: Sprint
     taskNum: Int
+    task: Task
     seconds: Float
   }
 
   type SkillVersionDuration {
-    skillName: String
+    skill: Skill
     skillVersion: String
     invocations: Int!
     avgSeconds: Float
@@ -111,15 +118,16 @@ export const analyticsTypeDefs = `#graphql
   }
 
   type SkillPrecision {
-    sprint: String
+    sprint: Sprint
     taskNum: Int
+    task: Task
     filesRead: Int!
     filesModified: Int!
     explorationRatio: Float
   }
 
   type SkillVersionPrecision {
-    skillName: String
+    skill: Skill
     skillVersion: String
     tasks: Int!
     avgExplorationRatio: Float
@@ -128,30 +136,32 @@ export const analyticsTypeDefs = `#graphql
   # ── Velocity Types ────────────────────────────────────────────────
 
   type LearningRate {
-    owner: String!
-    sprint: String!
+    owner: Developer!
+    sprint: Sprint!
     tasks: Int!
     avgBlowUpRatio: Float
   }
 
   type PhaseTimingDistribution {
-    sprint: String
+    sprint: Sprint
     taskNum: Int
+    task: Task
     phase: String!
     seconds: Float!
     pctOfTotal: Float
   }
 
   type TokenEfficiency {
-    sprint: String
+    sprint: Sprint
     complexity: String
     tasks: Int!
     avgTokensPerTask: Float
   }
 
   type BlowUpFactor {
-    sprint: String!
+    sprint: Sprint!
     taskNum: Int!
+    task: Task!
     title: String
     type: String
     complexity: String
@@ -165,7 +175,7 @@ export const analyticsTypeDefs = `#graphql
   # ── Estimation Types ──────────────────────────────────────────────
 
   type EstimationAccuracy {
-    owner: String!
+    owner: Developer!
     tasksWithEstimates: Int!
     avgEstimated: Float
     avgActual: Float
@@ -179,6 +189,7 @@ export const analyticsTypeDefs = `#graphql
     avgEstimated: Float
     avgActual: Float
     blowUpRatio: Float
+    sampleTasks: [Task!]!
   }
 
   type EstimationAccuracyByComplexity {
@@ -187,12 +198,13 @@ export const analyticsTypeDefs = `#graphql
     avgEstimated: Float
     avgActual: Float
     blowUpRatio: Float
+    sampleTasks: [Task!]!
   }
 
   # ── Quality Types ─────────────────────────────────────────────────
 
   type DeveloperQuality {
-    owner: String!
+    owner: Developer!
     totalTasks: Int!
     totalReversions: Int!
     reversionsPerTask: Float
@@ -201,7 +213,7 @@ export const analyticsTypeDefs = `#graphql
   }
 
   type AuditFindings {
-    owner: String!
+    owner: Developer!
     fakeTestIncidents: Int!
     patternViolations: Int!
     belowAGrade: Int!
@@ -216,12 +228,13 @@ export const analyticsTypeDefs = `#graphql
     totalReversions: Int!
     avgReversions: Float
     aGradeRate: Float
+    sampleTasks: [Task!]!
   }
 
   # ── Sprint & Session Types ────────────────────────────────────────
 
   type SprintVelocity {
-    sprint: String!
+    sprint: Sprint!
     completedTasks: Int!
     avgMinutesPerTask: Float
     totalMinutes: Float
@@ -230,9 +243,10 @@ export const analyticsTypeDefs = `#graphql
   type SessionTimelineEntry {
     sessionId: String!
     parentSessionId: String
-    developer: String
-    sprint: String
+    developer: Developer
+    sprint: Sprint
     taskNum: Int
+    task: Task
     taskTitle: String
     skillName: String
     startedAt: String!

@@ -36,7 +36,7 @@ export const mutationResolvers = {
       );
 
       return {
-        developer: args.developer,
+        _developer: args.developer,
         date: args.date,
         expectedMinutes: args.expectedMinutes,
         effectiveness: args.effectiveness ?? 1.0,
@@ -73,7 +73,7 @@ export const mutationResolvers = {
       );
 
       return {
-        developer: args.developer,
+        _developer: args.developer,
         category: args.category,
         skill: args.skill,
         rating: args.rating,
@@ -109,7 +109,7 @@ export const mutationResolvers = {
 
       return {
         id: result.id,
-        developer: result.developer,
+        _developer: result.developer,
         recordedAt: result.recorded_at,
         concurrentSessions: result.concurrent_sessions,
         hourOfDay: result.hour_of_day,
@@ -149,10 +149,11 @@ export const mutationResolvers = {
       return {
         id: result.id,
         timestamp: result.timestamp,
-        developer: result.developer,
+        _developer: result.developer,
         action: result.action,
-        sprint: result.sprint,
+        _sprint: result.sprint,
         taskNum: result.task_num,
+        _taskNum: result.task_num,
         summary: result.summary,
         metadata: result.metadata,
       };
@@ -248,6 +249,41 @@ export const mutationResolvers = {
         [args.sprint, args.taskNum]
       );
       return mapTask(updated);
+    },
+
+    resolveStaleTasks: async (_: any, __: any, ctx: Context) => {
+      // Find all red tasks started more than 48h ago
+      const staleTasks = await queryAll(
+        ctx.db,
+        `SELECT * FROM tasks
+         WHERE status = 'red'
+           AND started_at IS NOT NULL
+           AND started_at < datetime('now', '-48 hours')`,
+        []
+      );
+
+      if (staleTasks.length === 0) return [];
+
+      // Bulk reset: owner→null, status→pending, clear started_at
+      await ctx.db.query(
+        `UPDATE tasks
+         SET owner = NULL, status = 'pending', started_at = NULL
+         WHERE status = 'red'
+           AND started_at IS NOT NULL
+           AND started_at < datetime('now', '-48 hours')`,
+        []
+      );
+
+      // Return the now-reset tasks
+      const sprintNums = staleTasks.map(
+        (t: any) => `(sprint = '${t.sprint}' AND task_num = ${t.task_num})`
+      );
+      const updated = await queryAll(
+        ctx.db,
+        `SELECT * FROM tasks WHERE ${sprintNums.join(" OR ")}`,
+        []
+      );
+      return updated.map(mapTask);
     },
 
     assignTask: async (

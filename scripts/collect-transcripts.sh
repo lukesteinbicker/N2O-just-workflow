@@ -92,7 +92,7 @@ get_skill_version() {
 # ---------------------------------------------------------------------------
 # Resolve paths
 # ---------------------------------------------------------------------------
-PROJECT_ROOT="$(pwd)"
+PROJECT_ROOT="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 DB="$PROJECT_ROOT/.pm/tasks.db"
 
 if [[ ! -f "$DB" ]]; then

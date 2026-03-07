@@ -71,7 +71,7 @@ describe("Date filters on analytics queries", () => {
   it("developerQuality returns all tasks when no date filters", async () => {
     const rows = await analyticsResolvers.Query.developerQuality(null, {}, ctx);
     // alice has 2 tasks, bob has 1
-    const alice = rows.find((r: any) => r.owner === "alice");
+    const alice = rows.find((r: any) => r._owner === "alice");
     expect(alice).toBeDefined();
     expect(alice.totalTasks).toBe(2);
   });
@@ -83,7 +83,7 @@ describe("Date filters on analytics queries", () => {
       ctx
     );
     // Only Feb task for alice (completed 2026-02-15)
-    const alice = rows.find((r: any) => r.owner === "alice");
+    const alice = rows.find((r: any) => r._owner === "alice");
     expect(alice).toBeDefined();
     expect(alice.totalTasks).toBe(1);
     expect(alice.totalReversions).toBe(2); // Feb task had 2 reversions
@@ -96,12 +96,12 @@ describe("Date filters on analytics queries", () => {
       ctx
     );
     // Only Jan task for alice
-    const alice = rows.find((r: any) => r.owner === "alice");
+    const alice = rows.find((r: any) => r._owner === "alice");
     expect(alice).toBeDefined();
     expect(alice.totalTasks).toBe(1);
     expect(alice.totalReversions).toBe(0);
     // Bob has no tasks in Jan
-    const bob = rows.find((r: any) => r.owner === "bob");
+    const bob = rows.find((r: any) => r._owner === "bob");
     expect(bob).toBeUndefined();
   });
 
@@ -113,7 +113,7 @@ describe("Date filters on analytics queries", () => {
       { dateFrom: "2026-02-01" },
       ctx
     );
-    const alice = rows.find((r: any) => r.owner === "alice");
+    const alice = rows.find((r: any) => r._owner === "alice");
     expect(alice).toBeDefined();
     expect(alice.totalTasks).toBe(1); // Only Feb task
     expect(alice.fakeTestIncidents).toBe(1); // "fake test found" in notes
@@ -127,7 +127,7 @@ describe("Date filters on analytics queries", () => {
       { dateFrom: "2026-02-01" },
       ctx
     );
-    const alice = rows.find((r: any) => r.owner === "alice");
+    const alice = rows.find((r: any) => r._owner === "alice");
     expect(alice).toBeDefined();
     expect(alice.tasksWithEstimates).toBe(1); // Only Feb task
   });
@@ -163,8 +163,8 @@ describe("Date filters on analytics queries", () => {
       ctx
     );
     // Feb: 1 Edit event, Mar: 1 Read event. Jan excluded.
-    const readTool = rows.find((r: any) => r.toolName === "Read");
-    const editTool = rows.find((r: any) => r.toolName === "Edit");
+    const readTool = rows.find((r: any) => r._skillName === "Read");
+    const editTool = rows.find((r: any) => r._skillName === "Edit");
     expect(readTool).toBeDefined();
     expect(readTool.invocations).toBe(1); // Only March's Read (Jan excluded)
     expect(editTool).toBeDefined();

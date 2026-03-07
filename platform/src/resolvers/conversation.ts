@@ -418,9 +418,10 @@ export const conversationResolvers = {
         const messages = readMessagesFromSqlite(s.sessionId) ?? parseJSONL(s.filePath, s.sessionId);
         return {
           sessionId: s.sessionId,
-          developer,
-          sprint: null,
+          _developer: developer,
+          _sprint: null,
           taskNum: null,
+          _taskNum: null,
           taskTitle: null,
           startedAt: s.startedAt,
           endedAt: s.endedAt,

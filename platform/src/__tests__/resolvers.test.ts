@@ -258,7 +258,7 @@ describe("Mutation resolvers", () => {
       { developer: "bob", date: "2026-03-01", expectedMinutes: 360 },
       mockCtx
     );
-    expect(result.developer).toBe("bob");
+    expect(result._developer).toBe("bob");
     expect(result.date).toBe("2026-03-01");
     expect(result.expectedMinutes).toBe(360);
     expect(result.effectiveness).toBe(1.0);
@@ -276,7 +276,7 @@ describe("Mutation resolvers", () => {
       { developer: "bob", category: "backend", skill: "python", rating: 3.5 },
       mockCtx
     );
-    expect(result.developer).toBe("bob");
+    expect(result._developer).toBe("bob");
     expect(result.category).toBe("backend");
     expect(result.skill).toBe("python");
     expect(result.rating).toBe(3.5);
@@ -302,7 +302,7 @@ describe("Mutation resolvers", () => {
       mockCtx
     );
     expect(result.id).toBe(99);
-    expect(result.developer).toBe("alice");
+    expect(result._developer).toBe("alice");
     expect(result.concurrentSessions).toBe(2);
     expect(result.alertness).toBe(0.9);
   });
@@ -327,6 +327,6 @@ describe("Mutation resolvers", () => {
     );
     expect(result.id).toBe(1);
     expect(result.action).toBe("task_completed");
-    expect(result.sprint).toBe("s1");
+    expect(result._sprint).toBe("s1");
   });
 });

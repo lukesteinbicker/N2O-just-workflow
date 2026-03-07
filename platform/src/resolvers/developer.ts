@@ -32,7 +32,7 @@ export const developerResolvers = {
         [dev.name]
       );
       return rows.map((row: any) => ({
-        developer: row.developer,
+        _developer: row.developer,
         category: row.category,
         skill: row.skill,
         rating: row.rating,
@@ -77,7 +77,7 @@ export const developerResolvers = {
 
       if (!row) return null;
       return {
-        developer: row.developer,
+        _developer: row.developer,
         date: row.date,
         expectedMinutes: row.expected_minutes,
         effectiveness: row.effectiveness,
@@ -95,7 +95,7 @@ export const developerResolvers = {
       );
       return rows.map((row: any) => ({
         id: row.id,
-        developer: row.developer,
+        _developer: row.developer,
         recordedAt: row.recorded_at,
         concurrentSessions: row.concurrent_sessions,
         hourOfDay: row.hour_of_day,

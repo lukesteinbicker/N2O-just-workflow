@@ -91,6 +91,9 @@ export const coreTypeDefs = `#graphql
 
     """Assign a task to a developer (lead operation): sets owner without status requirements."""
     assignTask(sprint: String!, taskNum: Int!, developer: String!): Task!
+
+    """Bulk-reset stale tasks (red status, started >48h ago) back to pending with no owner. Returns the reset tasks."""
+    resolveStaleTasks: [Task!]!
   }
 
   # ── Core Entities ──────────────────────────────────────────
@@ -190,7 +193,7 @@ export const coreTypeDefs = `#graphql
   # ── Supporting Types ───────────────────────────────────────
 
   type DeveloperSkill {
-    developer: String!
+    developer: Developer!
     category: String!
     skill: String!
     rating: Float!
@@ -201,7 +204,7 @@ export const coreTypeDefs = `#graphql
 
   type DeveloperContext {
     id: Int!
-    developer: String!
+    developer: Developer!
     recordedAt: String!
     concurrentSessions: Int!
     hourOfDay: Int
@@ -211,7 +214,7 @@ export const coreTypeDefs = `#graphql
   }
 
   type Availability {
-    developer: String!
+    developer: Developer!
     date: String!
     expectedMinutes: Float!
     effectiveness: Float!
@@ -229,8 +232,9 @@ export const coreTypeDefs = `#graphql
     id: Int!
     timestamp: String!
     sessionId: String
-    sprint: String
+    sprint: Sprint
     taskNum: Int
+    task: Task
     eventType: String!
     toolName: String
     skillName: String
@@ -257,17 +261,19 @@ export const coreTypeDefs = `#graphql
     model: String
     startedAt: String
     endedAt: String
-    sprint: String
+    sprint: Sprint
     taskNum: Int
+    task: Task
   }
 
   type Activity {
     id: Int!
     timestamp: String!
-    developer: String
+    developer: Developer
     action: String!
-    sprint: String
+    sprint: Sprint
     taskNum: Int
+    task: Task
     summary: String
     metadata: String
     sessionId: String
@@ -290,9 +296,10 @@ export const coreTypeDefs = `#graphql
 
   type SessionConversation {
     sessionId: String!
-    developer: String
-    sprint: String
+    developer: Developer
+    sprint: Sprint
     taskNum: Int
+    task: Task
     taskTitle: String
     startedAt: String
     endedAt: String

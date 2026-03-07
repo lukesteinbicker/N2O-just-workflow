@@ -178,8 +178,9 @@ describe("mapEvent", () => {
       id: 1,
       timestamp: "2026-02-22T10:00:00",
       sessionId: "sess-1",
-      sprint: "s1",
+      _sprint: "s1",
       taskNum: 2,
+      _taskNum: 2,
       eventType: "tool_call",
       toolName: "Read",
       skillName: null,
@@ -232,8 +233,9 @@ describe("mapTranscript", () => {
       model: "claude-opus-4-6",
       startedAt: "2026-02-22T09:00:00",
       endedAt: "2026-02-22T10:00:00",
-      sprint: "s1",
+      _sprint: "s1",
       taskNum: 1,
+      _taskNum: 1,
     });
   });
 });

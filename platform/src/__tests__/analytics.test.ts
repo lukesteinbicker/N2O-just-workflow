@@ -2,17 +2,19 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { ApolloServer } from "@apollo/server";
 import { typeDefs } from "../schema/typeDefs.js";
 import { resolvers } from "../resolvers/index.js";
-import { createTestDb } from "./test-helpers.js";
+import { createTestDb, wrapDbAsPool } from "./test-helpers.js";
 import type { Context } from "../context.js";
 import type Database from "better-sqlite3";
 import { createLoaders } from "../loaders.js";
 
 let db: Database.Database;
+let pool: ReturnType<typeof wrapDbAsPool>;
 let server: ApolloServer<Context>;
 
 beforeAll(() => {
   db = createTestDb();
   seedAnalyticsData(db);
+  pool = wrapDbAsPool(db);
   server = new ApolloServer<Context>({ typeDefs, resolvers });
 });
 
@@ -23,7 +25,7 @@ afterAll(() => {
 function executeQuery(query: string, variables?: Record<string, any>) {
   return server.executeOperation(
     { query, variables },
-    { contextValue: { db, loaders: createLoaders(db) } }
+    { contextValue: { db: pool, loaders: createLoaders(pool) } }
   );
 }
 
@@ -213,11 +215,11 @@ function seedAnalyticsData(db: Database.Database) {
 describe("Skill analytics", () => {
   it("returns skill usage with invocation counts", async () => {
     const data = getData(
-      await executeQuery(`query { skillUsage { toolName invocations sessions } }`)
+      await executeQuery(`query { skillUsage { skill { name } invocations sessions } }`)
     );
     expect(data.skillUsage.length).toBeGreaterThan(0);
     const readUsage = data.skillUsage.find(
-      (s: any) => s.toolName === "Read"
+      (s: any) => s.skill?.name === "Read"
     );
     expect(readUsage).toBeDefined();
     expect(readUsage.invocations).toBeGreaterThanOrEqual(2);
@@ -226,11 +228,11 @@ describe("Skill analytics", () => {
 
   it("returns skill token usage", async () => {
     const data = getData(
-      await executeQuery(`query { skillTokenUsage { skillName sprint invocations totalInputTokens totalOutputTokens avgTokensPerCall } }`)
+      await executeQuery(`query { skillTokenUsage { skill { name } sprint { name } invocations totalInputTokens totalOutputTokens avgTokensPerCall } }`)
     );
     expect(data.skillTokenUsage.length).toBeGreaterThan(0);
     const tddUsage = data.skillTokenUsage.find(
-      (s: any) => s.skillName === "tdd-agent"
+      (s: any) => s.skill?.name === "tdd-agent"
     );
     expect(tddUsage).toBeDefined();
     expect(tddUsage.totalInputTokens).toBeGreaterThan(0);
@@ -240,43 +242,43 @@ describe("Skill analytics", () => {
   it("filters skill token usage by sprint", async () => {
     const data = getData(
       await executeQuery(
-        `query($sprint: String) { skillTokenUsage(sprint: $sprint) { skillName sprint } }`,
+        `query($sprint: String) { skillTokenUsage(sprint: $sprint) { skill { name } sprint { name } } }`,
         { sprint: "sprint-1" }
       )
     );
     for (const row of data.skillTokenUsage) {
-      expect(row.sprint).toBe("sprint-1");
+      expect(row.sprint.name).toBe("sprint-1");
     }
   });
 
   it("returns skill version token usage", async () => {
     const data = getData(
-      await executeQuery(`query { skillVersionTokenUsage { skillName skillVersion invocations avgTokensPerCall } }`)
+      await executeQuery(`query { skillVersionTokenUsage { skill { name } skillVersion invocations avgTokensPerCall } }`)
     );
     expect(data.skillVersionTokenUsage.length).toBeGreaterThan(0);
     const v2 = data.skillVersionTokenUsage.find(
       (s: any) => s.skillVersion === "v2"
     );
     expect(v2).toBeDefined();
-    expect(v2.skillName).toBe("tdd-agent");
+    expect(v2.skill?.name).toBe("tdd-agent");
   });
 
   it("returns skill duration", async () => {
     const data = getData(
-      await executeQuery(`query { skillDuration { skillName sprint taskNum seconds } }`)
+      await executeQuery(`query { skillDuration { skill { name } sprint { name } taskNum seconds } }`)
     );
     expect(data.skillDuration.length).toBeGreaterThan(0);
-    expect(data.skillDuration[0].skillName).toBe("tdd-agent");
+    expect(data.skillDuration[0].skill?.name).toBe("tdd-agent");
     expect(data.skillDuration[0].seconds).toBeGreaterThan(0);
   });
 
   it("returns skill precision with exploration ratio", async () => {
     const data = getData(
-      await executeQuery(`query { skillPrecision { sprint taskNum filesRead filesModified explorationRatio } }`)
+      await executeQuery(`query { skillPrecision { sprint { name } taskNum filesRead filesModified explorationRatio } }`)
     );
     expect(data.skillPrecision.length).toBeGreaterThan(0);
     const task1 = data.skillPrecision.find(
-      (s: any) => s.sprint === "sprint-1" && s.taskNum === 1
+      (s: any) => s.sprint?.name === "sprint-1" && s.taskNum === 1
     );
     expect(task1).toBeDefined();
     expect(task1.filesRead).toBeGreaterThan(0);
@@ -291,11 +293,11 @@ describe("Skill analytics", () => {
 describe("Velocity analytics", () => {
   it("returns developer learning rate across sprints", async () => {
     const data = getData(
-      await executeQuery(`query { developerLearningRate { owner sprint tasks avgBlowUpRatio } }`)
+      await executeQuery(`query { developerLearningRate { owner { name } sprint { name } tasks avgBlowUpRatio } }`)
     );
     expect(data.developerLearningRate.length).toBeGreaterThan(0);
     const aliceSprint1 = data.developerLearningRate.find(
-      (r: any) => r.owner === "alice" && r.sprint === "sprint-1"
+      (r: any) => r.owner?.name === "alice" && r.sprint?.name === "sprint-1"
     );
     expect(aliceSprint1).toBeDefined();
     expect(aliceSprint1.tasks).toBeGreaterThanOrEqual(2);
@@ -305,22 +307,22 @@ describe("Velocity analytics", () => {
   it("filters learning rate by owner", async () => {
     const data = getData(
       await executeQuery(
-        `query($owner: String) { developerLearningRate(owner: $owner) { owner sprint } }`,
+        `query($owner: String) { developerLearningRate(owner: $owner) { owner { name } sprint { name } } }`,
         { owner: "alice" }
       )
     );
     for (const row of data.developerLearningRate) {
-      expect(row.owner).toBe("alice");
+      expect(row.owner.name).toBe("alice");
     }
   });
 
   it("returns phase timing distribution", async () => {
     const data = getData(
-      await executeQuery(`query { phaseTimingDistribution { sprint taskNum phase seconds pctOfTotal } }`)
+      await executeQuery(`query { phaseTimingDistribution { sprint { name } taskNum phase seconds pctOfTotal } }`)
     );
     expect(data.phaseTimingDistribution.length).toBeGreaterThan(0);
     const phases = data.phaseTimingDistribution.filter(
-      (p: any) => p.sprint === "sprint-1" && p.taskNum === 1
+      (p: any) => p.sprint?.name === "sprint-1" && p.taskNum === 1
     );
     // We inserted RED→GREEN→REFACTOR→AUDIT transitions
     expect(phases.length).toBe(3); // 3 intervals between 4 phase events
@@ -332,12 +334,12 @@ describe("Velocity analytics", () => {
 
   it("returns token efficiency trend", async () => {
     const data = getData(
-      await executeQuery(`query { tokenEfficiencyTrend { sprint complexity tasks avgTokensPerTask } }`)
+      await executeQuery(`query { tokenEfficiencyTrend { sprint { name } complexity tasks avgTokensPerTask } }`)
     );
     expect(data.tokenEfficiencyTrend.length).toBeGreaterThan(0);
     // sprint-1 task 1 (medium) has transcript with 15000+8000=23000 tokens
     const sprint1Medium = data.tokenEfficiencyTrend.find(
-      (t: any) => t.sprint === "sprint-1" && t.complexity === "medium"
+      (t: any) => t.sprint?.name === "sprint-1" && t.complexity === "medium"
     );
     expect(sprint1Medium).toBeDefined();
     expect(sprint1Medium.avgTokensPerTask).toBeGreaterThan(0);
@@ -345,12 +347,12 @@ describe("Velocity analytics", () => {
 
   it("returns blow-up factors for tasks exceeding 2x estimate", async () => {
     const data = getData(
-      await executeQuery(`query { blowUpFactors { sprint taskNum title type blowUpRatio reversions } }`)
+      await executeQuery(`query { blowUpFactors { sprint { name } taskNum title type blowUpRatio reversions } }`)
     );
     expect(data.blowUpFactors.length).toBeGreaterThan(0);
     // Task sprint-1/#2: 1h est, 5h actual = 5.0x
     const authTask = data.blowUpFactors.find(
-      (b: any) => b.sprint === "sprint-1" && b.taskNum === 2
+      (b: any) => b.sprint?.name === "sprint-1" && b.taskNum === 2
     );
     expect(authTask).toBeDefined();
     expect(authTask.blowUpRatio).toBeGreaterThan(2);
@@ -364,11 +366,11 @@ describe("Velocity analytics", () => {
 describe("Estimation analytics", () => {
   it("returns estimation accuracy by developer", async () => {
     const data = getData(
-      await executeQuery(`query { estimationAccuracy { owner tasksWithEstimates avgEstimated avgActual blowUpRatio } }`)
+      await executeQuery(`query { estimationAccuracy { owner { name } tasksWithEstimates avgEstimated avgActual blowUpRatio } }`)
     );
     expect(data.estimationAccuracy.length).toBeGreaterThan(0);
     const alice = data.estimationAccuracy.find(
-      (e: any) => e.owner === "alice"
+      (e: any) => e.owner?.name === "alice"
     );
     expect(alice).toBeDefined();
     expect(alice.tasksWithEstimates).toBeGreaterThanOrEqual(2);
@@ -405,11 +407,11 @@ describe("Estimation analytics", () => {
 describe("Quality analytics", () => {
   it("returns developer quality metrics", async () => {
     const data = getData(
-      await executeQuery(`query { developerQuality { owner totalTasks totalReversions reversionsPerTask aGrades aGradePct } }`)
+      await executeQuery(`query { developerQuality { owner { name } totalTasks totalReversions reversionsPerTask aGrades aGradePct } }`)
     );
     expect(data.developerQuality.length).toBeGreaterThan(0);
     const alice = data.developerQuality.find(
-      (q: any) => q.owner === "alice"
+      (q: any) => q.owner?.name === "alice"
     );
     expect(alice).toBeDefined();
     expect(alice.totalTasks).toBeGreaterThanOrEqual(2);
@@ -419,11 +421,11 @@ describe("Quality analytics", () => {
 
   it("returns common audit findings", async () => {
     const data = getData(
-      await executeQuery(`query { commonAuditFindings { owner fakeTestIncidents patternViolations belowAGrade totalTasks } }`)
+      await executeQuery(`query { commonAuditFindings { owner { name } fakeTestIncidents patternViolations belowAGrade totalTasks } }`)
     );
     expect(data.commonAuditFindings.length).toBeGreaterThan(0);
     const alice = data.commonAuditFindings.find(
-      (f: any) => f.owner === "alice"
+      (f: any) => f.owner?.name === "alice"
     );
     expect(alice).toBeDefined();
     // Task 2 has "fake test violation" in notes → fakeTestIncidents >= 1
@@ -451,11 +453,11 @@ describe("Quality analytics", () => {
 describe("Sprint analytics", () => {
   it("returns sprint velocity", async () => {
     const data = getData(
-      await executeQuery(`query { sprintVelocity { sprint completedTasks avgMinutesPerTask totalMinutes } }`)
+      await executeQuery(`query { sprintVelocity { sprint { name } completedTasks avgMinutesPerTask totalMinutes } }`)
     );
     expect(data.sprintVelocity.length).toBeGreaterThan(0);
     const sprint1 = data.sprintVelocity.find(
-      (v: any) => v.sprint === "sprint-1"
+      (v: any) => v.sprint?.name === "sprint-1"
     );
     expect(sprint1).toBeDefined();
     expect(sprint1.completedTasks).toBeGreaterThanOrEqual(3);
@@ -465,12 +467,12 @@ describe("Sprint analytics", () => {
   it("filters sprint velocity by sprint name", async () => {
     const data = getData(
       await executeQuery(
-        `query($sprint: String) { sprintVelocity(sprint: $sprint) { sprint completedTasks } }`,
+        `query($sprint: String) { sprintVelocity(sprint: $sprint) { sprint { name } completedTasks } }`,
         { sprint: "sprint-2" }
       )
     );
     expect(data.sprintVelocity.length).toBe(1);
-    expect(data.sprintVelocity[0].sprint).toBe("sprint-2");
+    expect(data.sprintVelocity[0].sprint.name).toBe("sprint-2");
   });
 });
 
@@ -480,7 +482,7 @@ describe("Session timeline", () => {
   it("returns primary sessions with subagents nested", async () => {
     const data = getData(
       await executeQuery(`query { sessionTimeline {
-        sessionId parentSessionId developer sprint taskNum taskTitle
+        sessionId parentSessionId developer { name } sprint { name } taskNum taskTitle
         startedAt endedAt durationMinutes
         totalInputTokens totalOutputTokens toolCallCount messageCount model
         subagents { sessionId parentSessionId model }
@@ -494,8 +496,8 @@ describe("Session timeline", () => {
     );
     expect(sess1).toBeDefined();
     expect(sess1.parentSessionId).toBeNull();
-    expect(sess1.developer).toBe("alice");
-    expect(sess1.sprint).toBe("sprint-1");
+    expect(sess1.developer).toEqual({ name: "alice" });
+    expect(sess1.sprint).toEqual({ name: "sprint-1" });
     expect(sess1.taskNum).toBe(1);
     expect(sess1.taskTitle).toBe("Set up database");
     expect(sess1.totalInputTokens).toBe(15000);
@@ -512,12 +514,12 @@ describe("Session timeline", () => {
   it("filters session timeline by developer", async () => {
     const data = getData(
       await executeQuery(
-        `query($dev: String) { sessionTimeline(developer: $dev) { sessionId developer } }`,
+        `query($dev: String) { sessionTimeline(developer: $dev) { sessionId developer { name } } }`,
         { dev: "alice" }
       )
     );
     for (const session of data.sessionTimeline) {
-      expect(session.developer).toBe("alice");
+      expect(session.developer.name).toBe("alice");
     }
   });
 

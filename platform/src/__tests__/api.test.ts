@@ -382,13 +382,13 @@ describe("Mutations", () => {
     const res = await executeQuery(`
       mutation {
         setAvailability(developer: "bob", date: "2026-02-24", expectedMinutes: 360, effectiveness: 0.9, status: "limited", notes: "Half day") {
-          developer date expectedMinutes effectiveness status notes
+          developer { name } date expectedMinutes effectiveness status notes
         }
       }
     `);
     const data = (res.body as any).singleResult.data;
     expect(data.setAvailability).toEqual({
-      developer: "bob",
+      developer: { name: "bob" },
       date: "2026-02-24",
       expectedMinutes: 360,
       effectiveness: 0.9,
@@ -428,13 +428,13 @@ describe("Mutations", () => {
     const res = await executeQuery(`
       mutation {
         setSkill(developer: "bob", category: "backend", skill: "python", rating: 3.5, source: "self") {
-          developer category skill rating source
+          developer { name } category skill rating source
         }
       }
     `);
     const data = (res.body as any).singleResult.data;
     expect(data.setSkill).toEqual({
-      developer: "bob",
+      developer: { name: "bob" },
       category: "backend",
       skill: "python",
       rating: 3.5,
@@ -473,11 +473,12 @@ describe("Mutations", () => {
     const res = await executeQuery(`
       mutation {
         recordContext(developer: "alice", concurrentSessions: 5, hourOfDay: 22, alertness: 0.4, environment: "home") {
-          developer concurrentSessions hourOfDay alertness environment
+          developer { name } concurrentSessions hourOfDay alertness environment
         }
       }
     `);
     const data = (res.body as any).singleResult.data;
+    expect(data.recordContext.developer).toEqual({ name: "alice" });
     expect(data.recordContext.concurrentSessions).toBe(5);
     expect(data.recordContext.hourOfDay).toBe(22);
     expect(data.recordContext.alertness).toBe(0.4);
@@ -488,12 +489,14 @@ describe("Mutations", () => {
     const res = await executeQuery(`
       mutation {
         logActivity(developer: "alice", action: "pr_opened", sprint: "test-sprint", taskNum: 2, summary: "Alice opened PR for API") {
-          developer action sprint taskNum summary
+          developer { name } action sprint { name } taskNum summary
         }
       }
     `);
     const data = (res.body as any).singleResult.data;
+    expect(data.logActivity.developer).toEqual({ name: "alice" });
     expect(data.logActivity.action).toBe("pr_opened");
+    expect(data.logActivity.sprint).toEqual({ name: "test-sprint" });
     expect(data.logActivity.summary).toBe("Alice opened PR for API");
   });
 });
@@ -503,7 +506,7 @@ describe("Mutations", () => {
 describe("Activity log queries", () => {
   it("fetches activity log with limit", async () => {
     const res = await executeQuery(`
-      query { activityLog(limit: 5) { action developer summary } }
+      query { activityLog(limit: 5) { action developer { name } summary } }
     `);
     const data = (res.body as any).singleResult.data;
     expect(data.activityLog.length).toBeGreaterThan(0);
@@ -512,21 +515,17 @@ describe("Activity log queries", () => {
       (a: any) => a.action === "task_completed"
     );
     expect(seeded).toBeTruthy();
-    expect(seeded.developer).toBe("alice");
+    expect(seeded.developer).toEqual({ name: "alice" });
   });
 
   it("filters activity log by developer", async () => {
     const res = await executeQuery(`
-      query { activityLog(developer: "bob") { action } }
+      query { activityLog(developer: "bob") { action developer { name } } }
     `);
     const data = (res.body as any).singleResult.data;
-    // Bob has no seeded activity
-    const bobActivities = data.activityLog.filter(
-      (a: any) => a.developer === "bob"
-    );
     // May have entries from mutation tests; all should be bob's
     data.activityLog.forEach((a: any) => {
-      if (a.developer) expect(a.developer).toBe("bob");
+      if (a.developer) expect(a.developer.name).toBe("bob");
     });
   });
 });

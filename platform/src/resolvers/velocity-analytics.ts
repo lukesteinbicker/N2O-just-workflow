@@ -20,8 +20,8 @@ export const velocityQueryResolvers = {
       params
     );
     return rows.map((row: any) => ({
-      owner: row.owner,
-      sprint: row.sprint,
+      _owner: row.owner,
+      _sprint: row.sprint,
       tasks: parseInt(row.tasks),
       avgBlowUpRatio: row.avg_blow_up_ratio ? parseFloat(row.avg_blow_up_ratio) : null,
     }));
@@ -45,8 +45,9 @@ export const velocityQueryResolvers = {
       params
     );
     return rows.map((row: any) => ({
-      sprint: row.sprint,
+      _sprint: row.sprint,
       taskNum: row.task_num,
+      _taskNum: row.task_num,
       phase: row.phase,
       seconds: row.seconds ? parseFloat(row.seconds) : null,
       pctOfTotal: row.pct_of_total ? parseFloat(row.pct_of_total) : null,
@@ -59,7 +60,7 @@ export const velocityQueryResolvers = {
       "SELECT * FROM token_efficiency_trend ORDER BY sprint, complexity"
     );
     return rows.map((row: any) => ({
-      sprint: row.sprint,
+      _sprint: row.sprint,
       complexity: row.complexity,
       tasks: parseInt(row.tasks),
       avgTokensPerTask: row.avg_tokens_per_task ? parseFloat(row.avg_tokens_per_task) : null,
@@ -84,8 +85,9 @@ export const velocityQueryResolvers = {
       params
     );
     return rows.map((row: any) => ({
-      sprint: row.sprint,
+      _sprint: row.sprint,
       taskNum: row.task_num,
+      _taskNum: row.task_num,
       title: row.title,
       type: row.type,
       complexity: row.complexity,
@@ -143,7 +145,7 @@ export const velocityQueryResolvers = {
       params
     );
     return rows.map((row: any) => ({
-      owner: row.owner,
+      _owner: row.owner,
       tasksWithEstimates: parseInt(row.tasks_with_estimates),
       avgEstimated: row.avg_estimated ? parseFloat(row.avg_estimated) : null,
       avgActual: row.avg_actual ? parseFloat(row.avg_actual) : null,
@@ -217,7 +219,7 @@ export const velocityQueryResolvers = {
       params
     );
     return rows.map((row: any) => ({
-      sprint: row.sprint,
+      _sprint: row.sprint,
       completedTasks: parseInt(row.completed_tasks),
       avgMinutesPerTask: row.avg_minutes_per_task ? parseFloat(row.avg_minutes_per_task) : null,
       totalMinutes: row.total_minutes ? parseFloat(row.total_minutes) : null,

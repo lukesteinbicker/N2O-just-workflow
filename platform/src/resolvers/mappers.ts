@@ -72,8 +72,9 @@ export function mapEvent(row: any) {
     id: row.id,
     timestamp: row.timestamp,
     sessionId: row.session_id,
-    sprint: row.sprint,
+    _sprint: row.sprint,
     taskNum: row.task_num,
+    _taskNum: row.task_num,
     eventType: row.event_type,
     toolName: row.tool_name,
     skillName: row.skill_name,
@@ -103,7 +104,8 @@ export function mapTranscript(row: any) {
     model: row.model,
     startedAt: row.started_at,
     endedAt: row.ended_at,
-    sprint: row.sprint,
+    _sprint: row.sprint,
     taskNum: row.task_num,
+    _taskNum: row.task_num,
   };
 }

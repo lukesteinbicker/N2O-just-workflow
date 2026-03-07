@@ -32,7 +32,7 @@ export const skillQueryResolvers = {
       params
     );
     return rows.map((row: any) => ({
-      toolName: row.tool_name,
+      _skillName: row.tool_name,
       invocations: parseInt(row.invocations),
       sessions: parseInt(row.sessions),
       firstUsed: row.first_used,
@@ -58,8 +58,8 @@ export const skillQueryResolvers = {
       params
     );
     return rows.map((row: any) => ({
-      skillName: row.skill_name,
-      sprint: row.sprint,
+      _skillName: row.skill_name,
+      _sprint: row.sprint,
       invocations: parseInt(row.invocations),
       totalInputTokens: parseInt(row.total_input_tokens),
       totalOutputTokens: parseInt(row.total_output_tokens),
@@ -85,7 +85,7 @@ export const skillQueryResolvers = {
       params
     );
     return rows.map((row: any) => ({
-      skillName: row.skill_name,
+      _skillName: row.skill_name,
       skillVersion: row.skill_version,
       invocations: parseInt(row.invocations),
       totalInputTokens: parseInt(row.total_input_tokens),
@@ -112,9 +112,10 @@ export const skillQueryResolvers = {
       params
     );
     return rows.map((row: any) => ({
-      skillName: row.skill_name,
-      sprint: row.sprint,
+      _skillName: row.skill_name,
+      _sprint: row.sprint,
       taskNum: row.task_num,
+      _taskNum: row.task_num,
       seconds: row.seconds ? parseFloat(row.seconds) : null,
     }));
   },
@@ -137,7 +138,7 @@ export const skillQueryResolvers = {
       params
     );
     return rows.map((row: any) => ({
-      skillName: row.skill_name,
+      _skillName: row.skill_name,
       skillVersion: row.skill_version,
       invocations: parseInt(row.invocations),
       avgSeconds: row.avg_seconds ? parseFloat(row.avg_seconds) : null,
@@ -164,8 +165,9 @@ export const skillQueryResolvers = {
       params
     );
     return rows.map((row: any) => ({
-      sprint: row.sprint,
+      _sprint: row.sprint,
       taskNum: row.task_num,
+      _taskNum: row.task_num,
       filesRead: parseInt(row.files_read),
       filesModified: parseInt(row.files_modified),
       explorationRatio: row.exploration_ratio ? parseFloat(row.exploration_ratio) : null,
@@ -190,7 +192,7 @@ export const skillQueryResolvers = {
       params
     );
     return rows.map((row: any) => ({
-      skillName: row.skill_name,
+      _skillName: row.skill_name,
       skillVersion: row.skill_version,
       tasks: parseInt(row.tasks),
       avgExplorationRatio: row.avg_exploration_ratio ? parseFloat(row.avg_exploration_ratio) : null,
