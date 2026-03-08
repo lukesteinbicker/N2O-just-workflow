@@ -6,6 +6,7 @@ import { DATA } from "./capacity-data";
 import { SUPPLY, buildDaily, flattenProjects } from "./capacity-utils";
 import { CapacityHeader } from "./capacity-header";
 import { ProjectSidebar, type FlatProject } from "./project-sidebar";
+import { GanttTimeline } from "./gantt-timeline";
 import { DetailPanel } from "./detail-panel";
 
 export default function CapacityPage() {
@@ -121,18 +122,16 @@ export default function CapacityPage() {
           onSetHovProj={setHovProj}
         />
 
-        {/* CENTER — placeholder for Gantt + Demand chart (Task 3) */}
-        <div className="flex flex-1 flex-col overflow-hidden min-w-0">
-          <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
-            <div className="text-center">
-              <div className="text-lg font-bold text-foreground mb-1">Timeline &amp; Demand Chart</div>
-              <div>Gantt timeline + stacked demand chart (Task 3)</div>
-              <div className="mt-3 text-xs">
-                {active.length} active projects &middot; Peak demand: {peakRaw} seats
-              </div>
-            </div>
-          </div>
-        </div>
+        <GanttTimeline
+          active={active}
+          daily={daily}
+          gran={gran}
+          hovProj={hovProj}
+          selectedId={selectedId}
+          hoverData={hoverData}
+          onHoverChange={(data, _x) => setHoverData(data)}
+          onSetHovProj={setHovProj}
+        />
 
         {showDetail && (
           <DetailPanel
