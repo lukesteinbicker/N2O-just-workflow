@@ -146,3 +146,16 @@
     border-radius: 3px;
   }
 }
+
+/* Full-bleed pages (e.g. ontology explorer) bypass main padding.
+   !important ensures the override wins regardless of CSS layer ordering. */
+main:has(> .full-bleed) {
+  padding: 0 !important;
+  overflow: hidden !important;
+}
+
+/* Hide the health footer on full-bleed pages — they manage their own layout
+   and need every pixel of vertical space. */
+main:has(> .full-bleed) ~ [data-health-footer] {
+  display: none !important;
+}

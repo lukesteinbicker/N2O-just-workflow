@@ -9,7 +9,7 @@
  */
 "use client";
 
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import dynamic from "next/dynamic";
 import { useQuery } from "@apollo/client/react";
 import { LayoutGrid, Share2, X, ZoomIn, ZoomOut, Maximize2, Pin, Settings } from "lucide-react";
@@ -30,7 +30,28 @@ export default function OntologyPage() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const graphRef = useRef<any>(null);
   const graphContainerRef = useRef<HTMLDivElement>(null);
-  const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
+  const observerRef = useRef<ResizeObserver | null>(null);
+  const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
+
+  // Callback ref: measures element the instant React attaches it to the DOM
+  const graphContainerCallbackRef = useCallback((el: HTMLDivElement | null) => {
+    graphContainerRef.current = el;
+    // Clean up previous observer
+    if (observerRef.current) { observerRef.current.disconnect(); observerRef.current = null; }
+    if (!el) return;
+    // Immediate measurement
+    const w = el.clientWidth;
+    const h = el.clientHeight;
+    if (w > 0 && h > 0) setDimensions({ width: w, height: h });
+    // Ongoing resize tracking
+    const measure = () => {
+      const mw = el.clientWidth;
+      const mh = el.clientHeight;
+      if (mw > 0 && mh > 0) setDimensions({ width: mw, height: mh });
+    };
+    observerRef.current = new ResizeObserver(() => measure());
+    observerRef.current.observe(el);
+  }, []);
   const [selectedNode, setSelectedNode] = useState<EnrichedNode | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
@@ -46,14 +67,17 @@ export default function OntologyPage() {
   const adapter = activeAdapter === "graphql" ? graphqlAdapter : postgresqlAdapter;
   const CATEGORY_CONFIG = adapter.getCategoryConfig();
 
+  // Also re-measure on window resize as fallback
   useEffect(() => {
-    const el = graphContainerRef.current;
-    if (!el) return;
-    const observer = new ResizeObserver((entries) => {
-      for (const entry of entries) setDimensions({ width: entry.contentRect.width, height: entry.contentRect.height });
-    });
-    observer.observe(el);
-    return () => observer.disconnect();
+    const measure = () => {
+      const el = graphContainerRef.current;
+      if (!el) return;
+      const w = el.clientWidth;
+      const h = el.clientHeight;
+      if (w > 0 && h > 0) setDimensions({ width: w, height: h });
+    };
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
   }, []);
 
   useEffect(() => {
@@ -90,15 +114,42 @@ export default function OntologyPage() {
     return getHealthStatus(healthData?.dataHealth?.streams ?? [], healthData?.dataHealth?.lastSessionEndedAt ?? null, STREAM_ENTITY_MAP);
   }, [healthData]);
 
+  // Category anchor positions — spread across force-space so both initial positions
+  // and persistent clustering forces keep categories well-separated.
+  const catPos: Record<string, { x: number; y: number }> = useMemo(() => ({
+    core:          { x:  100, y: -420 },
+    activity:      { x: -300, y:  250 },
+    estimation:    { x:  400, y:  100 },
+    team:          { x: -580, y: -200 },
+    velocity:      { x:  500, y: -320 },
+    quality:       { x: -550, y:  100 },
+    skills:        { x: -320, y:  520 },
+    conversations: { x:  550, y:  320 },
+    data:          { x:  720, y: -100 },
+    other:         { x:  600, y:  500 },
+  }), []);
+
   const enrichedNodes = useMemo<EnrichedNode[]>(() => {
     if (!graphData) return [];
-    return graphData.nodes.map((n) => ({
-      ...n,
-      healthStatus: isSqlMode ? null : (healthMap[n.id] ?? null),
-      category: adapter.getCategoryForType(n.id),
-      pgMetadata: isSqlMode ? sqlParseResult?.metadata.get(n.id) : undefined,
-    }));
-  }, [graphData, healthMap, isSqlMode, adapter, sqlParseResult]);
+    const catIdx: Record<string, number> = {};
+    return graphData.nodes.map((n) => {
+      const category = adapter.getCategoryForType(n.id);
+      const anchor = catPos[category] || { x: 0, y: 0 };
+      const i = catIdx[category] || 0;
+      catIdx[category] = i + 1;
+      // Spread nodes within category in a small grid (3 columns, 80px spacing)
+      const col = i % 3;
+      const row = Math.floor(i / 3);
+      return {
+        ...n,
+        healthStatus: isSqlMode ? null : (healthMap[n.id] ?? null),
+        category,
+        pgMetadata: isSqlMode ? sqlParseResult?.metadata.get(n.id) : undefined,
+        x: anchor.x + (col - 1) * 80,
+        y: anchor.y + row * 80,
+      };
+    });
+  }, [graphData, healthMap, isSqlMode, adapter, sqlParseResult, catPos]);
 
   const categoryGroups = useMemo(() => {
     const groups: Record<string, EnrichedNode[]> = {};
@@ -136,21 +187,51 @@ export default function OntologyPage() {
     setSelectedNode, setHoveredNode, setHoveredLink,
   }), [selectedNode, enrichedNodes, forceGraphData, aggregatedEdges, hoveredNode, hoveredLink]);
 
+  const needsAutoFit = useRef(true);
+
   useEffect(() => {
-    if (!graphRef.current) return;
-    graphRef.current.d3Force("center", null);
-    graphRef.current.d3Force("charge")?.strength(-300);
-    graphRef.current.d3Force("link")?.distance(120);
+    needsAutoFit.current = true;
   }, [forceGraphData]);
 
-  // Re-fit graph when detail panel opens/closes (container width changes)
+  useEffect(() => {
+    const fg = graphRef.current;
+    if (!fg) return;
+    fg.d3Force("charge")?.strength(-500);
+    fg.d3Force("link")?.distance(150);
+    // Remove default center force — the cluster force handles positioning
+    fg.d3Force("center", null);
+    // Persistent category clustering force — uses d3's initialize pattern
+    // to receive the simulation's internal node array reference.
+    const positions = catPos;
+    let simNodes: EnrichedNode[] = [];
+    const force = (alpha: number) => {
+      for (const node of simNodes) {
+        const anchor = positions[node.category];
+        if (!anchor) continue;
+        const k = 0.35 * alpha;
+        node.vx! += (anchor.x - node.x!) * k;
+        node.vy! += (anchor.y - node.y!) * k;
+      }
+    };
+    force.initialize = (nodes: EnrichedNode[]) => { simNodes = nodes; };
+    fg.d3Force("cluster", force);
+  }, [forceGraphData, catPos]);
+
+  const handleEngineStop = useCallback(() => {
+    if (needsAutoFit.current && graphRef.current) {
+      graphRef.current.zoomToFit(400, 60);
+      needsAutoFit.current = false;
+    }
+  }, []);
+
+  // Re-fit graph when container dimensions change (resize, panel open/close)
   const panelOpen = selectedNode !== null;
   useEffect(() => {
-    if (graphRef.current && viewMode === "graph") {
-      const timer = setTimeout(() => graphRef.current?.zoomToFit(300, 80), 150);
+    if (graphRef.current && viewMode === "graph" && dimensions.width > 0 && dimensions.height > 0) {
+      const timer = setTimeout(() => graphRef.current?.zoomToFit(300, 60), 150);
       return () => clearTimeout(timer);
     }
-  }, [panelOpen, viewMode]);
+  }, [panelOpen, viewMode, dimensions.width, dimensions.height]);
 
   const entityConfig = selectedNode ? adapter.getEntityColumns(selectedNode.id) : undefined;
   const entityQuery = entityConfig?.query;
@@ -167,8 +248,7 @@ export default function OntologyPage() {
   if (!isSqlMode && schemaError) return <div className="flex h-full items-center justify-center"><div className="rounded-md border border-[#CD4246]/30 bg-[#CD4246]/10 p-4 text-sm text-[#CD4246]">Failed to load schema: {schemaError.message}</div></div>;
 
   return (
-    <div className="relative h-full w-full">
-    <div className="absolute -inset-4 flex overflow-hidden">
+    <div className="full-bleed flex h-full overflow-hidden">
       <CategorySidebar
         categoryConfig={CATEGORY_CONFIG}
         categoryGroups={categoryGroups}
@@ -180,7 +260,7 @@ export default function OntologyPage() {
         onSearchQueryChange={setSearchQuery}
       />
 
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden bg-card">
         {/* Header bar */}
         <div className="h-[44px] border-b border-border px-4 flex items-center justify-between flex-shrink-0 bg-card">
           <div className="flex items-center gap-3">
@@ -312,7 +392,7 @@ export default function OntologyPage() {
           </div>
         )}
 
-        <div ref={graphContainerRef} className="flex-1 relative overflow-hidden" style={{ backgroundColor: viewMode === "graph" ? COLORS.bg : undefined }}>
+        <div ref={graphContainerCallbackRef} className="flex-1 relative overflow-hidden" style={{ backgroundColor: viewMode === "graph" ? COLORS.bg : undefined }}>
           {(!graphData || graphData.nodes.length === 0) ? (
             <div className="flex h-full items-center justify-center">
               <div className="text-sm text-muted-foreground">
@@ -327,8 +407,9 @@ export default function OntologyPage() {
               onSelectNode={setSelectedNode}
               categoryConfig={CATEGORY_CONFIG}
             />
-          ) : (
+          ) : dimensions.width > 0 && dimensions.height > 0 ? (
             <>
+              <div className="absolute inset-0 overflow-hidden">
               <ForceGraph2D
                 ref={graphRef}
                 graphData={forceGraphData}
@@ -347,7 +428,7 @@ export default function OntologyPage() {
                 linkCurvature={0}
                 linkCanvasObject={canvas.linkCanvasObject}
                 linkCanvasObjectMode={() => "after"}
-                linkHoverPrecision={6}
+                linkHoverPrecision={3}
                 onNodeClick={canvas.handleNodeClick}
                 onNodeHover={canvas.handleNodeHover}
                 onLinkHover={canvas.handleLinkHover}
@@ -356,10 +437,12 @@ export default function OntologyPage() {
                 enableZoomInteraction={true}
                 enablePanInteraction={true}
                 enableNodeDrag={true}
+                onEngineStop={handleEngineStop}
                 cooldownTime={3000}
                 d3AlphaDecay={0.05}
                 d3VelocityDecay={0.6}
               />
+              </div>
               <div className="absolute left-4 bottom-4 z-10 flex flex-col gap-1">
                 {[
                   { icon: ZoomIn, handler: canvas.handleZoomIn, title: "Zoom in" },
@@ -386,7 +469,7 @@ export default function OntologyPage() {
                 </div>
               )}
             </>
-          )}
+          ) : null}
         </div>
       </div>
 
@@ -402,7 +485,6 @@ export default function OntologyPage() {
           recentRecords={recentRecords}
         />
       )}
-    </div>
     </div>
   );
 }

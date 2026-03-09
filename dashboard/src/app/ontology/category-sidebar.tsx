@@ -37,7 +37,7 @@ export function CategorySidebar({
   return (
     <div className="w-[220px] border-r border-border bg-card flex-shrink-0 flex flex-col overflow-hidden">
       {/* Search */}
-      <div className="p-3 border-b border-border">
+      <div className="h-[44px] px-3 flex items-center border-b border-border">
         <div className="flex items-center rounded-md border border-border bg-background px-2 py-1 text-xs">
           <Search size={12} className="mr-1.5 text-muted-foreground flex-shrink-0" />
           <input

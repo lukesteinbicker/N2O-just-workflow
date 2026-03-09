@@ -1,7 +1,11 @@
 "use client";
 
-import { useState, useMemo, useRef, useCallback, useEffect } from "react";
+import { useState, useMemo, useRef, useCallback, useEffect, useLayoutEffect } from "react";
+
+// SSR-safe useLayoutEffect (avoids warning during server render)
+const useBrowserLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : useEffect;
 import type { DailyPoint, Tick } from "./capacity-data";
+import { DATA } from "./capacity-data";
 import {
   getPS,
   getTicks,
@@ -10,13 +14,17 @@ import {
   ROW_GAP,
   LABEL_W_DEFAULT,
   SUPPLY,
-  LEAD_CEIL,
   T_START,
   T_END,
   T_MS,
 } from "./capacity-utils";
-import { DemandChart, DemandAxisLabels } from "./demand-chart";
+import { DemandChart, DemandAxisLabels, type OverlayBand } from "./demand-chart";
 import type { FlatProject } from "./project-sidebar";
+
+// Fixed height for the demand section (chart + legend + bottom ticks)
+const DEMAND_H = 250;
+// Separator height (thin border only — no gap between gantt and demand)
+const SEP_H = 0;
 
 // ─── Tick labels row ───
 
@@ -57,10 +65,12 @@ interface GanttTimelineProps {
   daily: DailyPoint[];
   gran: string;
   hovProj: string | null;
+  hovCompany: string | null;
   selectedId: string | null;
   hoverData: DailyPoint | null;
   onHoverChange: (data: DailyPoint | null, x: number | null) => void;
   onSetHovProj: (id: string | null) => void;
+  onSelectProject: (pid: string) => void;
 }
 
 // ─── Component ───
@@ -70,36 +80,113 @@ export function GanttTimeline({
   daily,
   gran,
   hovProj,
+  hovCompany,
   selectedId,
   hoverData,
   onHoverChange,
   onSetHovProj,
+  onSelectProject,
 }: GanttTimelineProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const timelineRef = useRef<HTMLDivElement>(null);
+  const ganttScrollRef = useRef<HTMLDivElement>(null);
+  const demandScrollRef = useRef<HTMLDivElement>(null);
+  const labelScrollRef = useRef<HTMLDivElement>(null);
   const isDraggingRef = useRef(false);
 
-  const [containerW, setContainerW] = useState(800);
   const [labelW, setLabelW] = useState(LABEL_W_DEFAULT);
   const [hoverX, setHoverX] = useState<number | null>(null);
+  const [scrollX, setScrollX] = useState(0);
+  const [scrollViewW, setScrollViewW] = useState(0);
+  // Defer Date.now() to avoid SSR/client hydration mismatch
+  const [now, setNow] = useState(T_START.getTime());
 
-  // Resize observer
-  useEffect(() => {
-    const measure = () => {
-      if (containerRef.current) setContainerW(containerRef.current.clientWidth);
-    };
-    measure();
-    window.addEventListener("resize", measure);
-    return () => window.removeEventListener("resize", measure);
+  // Measure gantt scroll container before first paint (prevents flash)
+  useBrowserLayoutEffect(() => {
+    const el = ganttScrollRef.current;
+    if (!el) return;
+    setScrollViewW(el.clientWidth);
+    setNow(Date.now());
   }, []);
+
+  // Track gantt scroll container size changes (window resize, detail panel open/close)
+  useEffect(() => {
+    const el = ganttScrollRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setScrollViewW(el.clientWidth));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // Track horizontal scroll position for label centering
+  useEffect(() => {
+    const el = ganttScrollRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      setScrollX(el.scrollLeft);
+      setScrollViewW(el.clientWidth);
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, []);
+
+  // ─── Scroll sync: gantt vertical ↔ label column vertical ───
+  useEffect(() => {
+    const gantt = ganttScrollRef.current;
+    const label = labelScrollRef.current;
+    if (!gantt || !label) return;
+    let source: "gantt" | "label" | null = null;
+    const syncFromGantt = () => {
+      if (source === "label") return;
+      source = "gantt";
+      label.scrollTop = gantt.scrollTop;
+      requestAnimationFrame(() => { source = null; });
+    };
+    const syncFromLabel = () => {
+      if (source === "gantt") return;
+      source = "label";
+      gantt.scrollTop = label.scrollTop;
+      requestAnimationFrame(() => { source = null; });
+    };
+    gantt.addEventListener("scroll", syncFromGantt, { passive: true });
+    label.addEventListener("scroll", syncFromLabel, { passive: true });
+    return () => {
+      gantt.removeEventListener("scroll", syncFromGantt);
+      label.removeEventListener("scroll", syncFromLabel);
+    };
+  }, []);
+
+  // ─── Scroll sync: gantt horizontal ↔ demand horizontal ───
+  useEffect(() => {
+    const gantt = ganttScrollRef.current;
+    const demand = demandScrollRef.current;
+    if (!gantt || !demand) return;
+    let source: "gantt" | "demand" | null = null;
+    const syncFromGantt = () => {
+      if (source === "demand") return;
+      source = "gantt";
+      demand.scrollLeft = gantt.scrollLeft;
+      requestAnimationFrame(() => { source = null; });
+    };
+    const syncFromDemand = () => {
+      if (source === "gantt") return;
+      source = "demand";
+      gantt.scrollLeft = demand.scrollLeft;
+      requestAnimationFrame(() => { source = null; });
+    };
+    gantt.addEventListener("scroll", syncFromGantt, { passive: true });
+    demand.addEventListener("scroll", syncFromDemand, { passive: true });
+    return () => {
+      gantt.removeEventListener("scroll", syncFromGantt);
+      demand.removeEventListener("scroll", syncFromDemand);
+    };
+  }, []);
+
 
   // Timeline width
   const totalDays = (T_END.getTime() - T_START.getTime()) / 864e5;
   const ppd = GRANS.find((g) => g.key === gran)!.ppd;
   const timelineWidth = useMemo(
-    () => Math.max(containerW - 4, totalDays * ppd),
-    [containerW, totalDays, ppd]
+    () => Math.max(scrollViewW || 800, totalDays * ppd),
+    [scrollViewW, totalDays, ppd]
   );
 
   // Ticks
@@ -108,10 +195,25 @@ export function GanttTimeline({
 
   // Chart scaling
   const maxD = Math.max(...daily.map((d) => d.raw), SUPPLY + 2);
-  const chartMax = Math.ceil(maxD / 5) * 5 + 2;
+  const chartMax = Math.ceil(maxD / 5) * 5;
 
-  // Today marker
-  const todayPx = ((Date.now() - T_START.getTime()) / T_MS) * timelineWidth;
+  // Today marker (uses deferred `now` to avoid hydration mismatch)
+  const todayPx = ((now - T_START.getTime()) / T_MS) * timelineWidth;
+
+  // Timeline overlay bands (finals, summer break, etc.)
+  const overlayBands = useMemo<OverlayBand[]>(() => {
+    return (DATA.overlays || []).map((o) => {
+      const l = Math.max(0, ((new Date(o.start).getTime() - T_START.getTime()) / T_MS) * timelineWidth);
+      const r = Math.min(timelineWidth, ((new Date(o.end).getTime() - T_START.getTime()) / T_MS) * timelineWidth);
+      return {
+        id: o.id,
+        label: o.label,
+        leftPx: l,
+        widthPx: r - l,
+        color: o.color || "rgba(255,255,255,0.05)",
+      };
+    });
+  }, [timelineWidth]);
 
   // Find nearest daily point
   const findNearest = useCallback(
@@ -130,11 +232,10 @@ export function GanttTimeline({
     [daily]
   );
 
-  // Hover handler
+  // Hover handler — uses e.currentTarget bounding rect (works for both sections)
   const onHover = useCallback(
     (e: React.MouseEvent) => {
-      if (!timelineRef.current) return;
-      const rect = timelineRef.current.getBoundingClientRect();
+      const rect = e.currentTarget.getBoundingClientRect();
       const x = e.clientX - rect.left;
       setHoverX(x);
       onHoverChange(findNearest(Math.max(0, Math.min(1, x / timelineWidth))), x);
@@ -147,12 +248,15 @@ export function GanttTimeline({
     onHoverChange(null, null);
   }, [onHoverChange]);
 
-  // Scroll to today on mount / gran change
+  // Scroll to today on mount / gran change (skip until measured)
   useEffect(() => {
-    if (!scrollRef.current) return;
+    if (!ganttScrollRef.current || scrollViewW === 0) return;
     const tp = ((Date.now() - T_START.getTime()) / T_MS) * timelineWidth;
-    scrollRef.current.scrollLeft = Math.max(0, tp - scrollRef.current.clientWidth * 0.25);
-  }, [gran, timelineWidth]);
+    ganttScrollRef.current.scrollLeft = Math.max(0, tp - ganttScrollRef.current.clientWidth * 0.25);
+    if (demandScrollRef.current) {
+      demandScrollRef.current.scrollLeft = ganttScrollRef.current.scrollLeft;
+    }
+  }, [gran, timelineWidth, scrollViewW]);
 
   // Label column drag
   const startLabelDrag = useCallback(
@@ -182,35 +286,40 @@ export function GanttTimeline({
   );
 
   return (
-    <div ref={containerRef} className="flex flex-1 overflow-hidden min-w-0">
+    <div className="flex flex-1 overflow-hidden min-w-0">
       {/* ─── Label column ─── */}
       <div
-        className="relative flex shrink-0 flex-col"
+        className="relative shrink-0 flex flex-col"
         style={{ width: labelW, minWidth: labelW }}
       >
-        <div className="shrink-0">
-          {/* TIMELINE header */}
-          <div className="flex h-7 items-end pb-0.5 pl-3">
-            <span className="text-[11px] font-bold tracking-[0.06em] text-muted-foreground">
-              TIMELINE
-            </span>
-          </div>
+        {/* Gantt labels — synced with gantt scroll vertical */}
+        <div
+          ref={labelScrollRef}
+          className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden scrollbar-none"
+          style={{ overscrollBehavior: "none" }}
+        >
+          {/* Spacer to align with tick labels row — sticky to match gantt header */}
+          <div className="sticky top-0 z-10 h-7 bg-[#1C2127]" />
           {/* Project labels */}
           {active.map((p) => {
             const hov = hovProj === p.id;
+            const companyHov = hovCompany === p.companyId;
             const atCross = hoverData
               ? new Date(p.start) <= hoverData.date && new Date(p.end) >= hoverData.date
               : false;
             return (
               <div
                 key={p.id}
-                className="flex items-center pl-3 pr-2.5"
+                className="flex cursor-pointer items-center pl-3 pr-2.5"
                 style={{ height: ROW_H, marginBottom: ROW_GAP }}
+                onMouseEnter={() => onSetHovProj(p.id)}
+                onMouseLeave={() => onSetHovProj(null)}
+                onClick={() => onSelectProject(p.id)}
               >
                 <span
                   className="overflow-hidden text-ellipsis whitespace-nowrap text-[11px] font-semibold transition-colors duration-100"
                   style={{
-                    color: hov
+                    color: hov || companyHov
                       ? "#fff"
                       : atCross
                         ? "var(--foreground)"
@@ -226,16 +335,15 @@ export function GanttTimeline({
         </div>
 
         {/* Separator */}
-        <div className="h-5 border-t border-border" />
+        <div className="shrink-0 border-t border-border" style={{ height: SEP_H }} />
 
-        {/* DEMAND label + axis */}
-        <div className="relative flex-1 min-h-[180px]">
-          <div className="pl-3 pt-1.5">
-            <span className="text-[11px] font-bold tracking-[0.06em] text-muted-foreground">
-              DEMAND
-            </span>
+        {/* Demand axis — flex layout matches chart column (chart area + tick labels) */}
+        <div className="flex flex-col shrink-0" style={{ height: DEMAND_H }}>
+          <div className="relative flex-1">
+            <DemandAxisLabels chartMax={chartMax} />
           </div>
-          <DemandAxisLabels chartMax={chartMax} />
+          {/* Spacer matching bottom tick labels */}
+          <div className="relative h-6 shrink-0" />
         </div>
 
         {/* Drag handle */}
@@ -247,27 +355,55 @@ export function GanttTimeline({
         </div>
       </div>
 
-      {/* ─── Scrollable timeline ─── */}
-      <div ref={scrollRef} className="flex-1 overflow-x-auto overflow-y-hidden scrollbar-thin">
-        <div
-          ref={timelineRef}
-          onMouseMove={onHover}
-          onMouseLeave={clearHover}
-          className="relative flex min-h-full cursor-crosshair flex-col"
-          style={{ width: timelineWidth }}
-        >
-          {/* Crosshair */}
-          {hoverX !== null && (
-            <div
-              className="pointer-events-none absolute inset-y-0 z-20"
-              style={{ left: hoverX, width: 1, background: "rgba(255,255,255,0.4)" }}
-            />
-          )}
+      {/* ─── Content column (relative container for absolute-positioned scroll areas) ─── */}
+      <div className="relative flex-1">
 
-          {/* ─── Gantt bars ─── */}
-          <div className="shrink-0">
-            {/* Top tick labels */}
-            <div className="flex h-7 items-end">
+        {/* Gantt scroll — absolutely positioned, fills from top to separator */}
+        <div
+          ref={ganttScrollRef}
+          className="absolute inset-x-0 top-0 overflow-auto scrollbar-thin"
+          style={{ bottom: DEMAND_H + SEP_H, overscrollBehavior: "none" }}
+        >
+          <div
+            onMouseMove={onHover}
+            onMouseLeave={clearHover}
+            className="relative cursor-crosshair"
+            style={{ width: timelineWidth }}
+          >
+            {/* Crosshair */}
+            {hoverX !== null && (
+              <div
+                className="pointer-events-none absolute inset-y-0 z-20"
+                style={{ left: hoverX, width: 1, background: "rgba(255,255,255,0.4)" }}
+              />
+            )}
+
+            {/* Timeline overlay bands */}
+            {overlayBands.map((o) => (
+              <div
+                key={`ov-${o.id}`}
+                className="absolute top-0 bottom-0 pointer-events-none z-[1]"
+                style={{
+                  left: o.leftPx,
+                  width: o.widthPx,
+                  background: o.color,
+                  borderLeft: "1px dashed rgba(255,255,255,0.1)",
+                  borderRight: "1px dashed rgba(255,255,255,0.1)",
+                }}
+              >
+                <div className="sticky top-8 px-1.5 py-0.5" style={{ width: "fit-content" }}>
+                  <span
+                    className="text-[9px] font-semibold uppercase tracking-wider"
+                    style={{ color: "rgba(255,255,255,0.35)" }}
+                  >
+                    {o.label}
+                  </span>
+                </div>
+              </div>
+            ))}
+
+            {/* Top tick labels — sticky so they stay visible while scrolling */}
+            <div className="sticky top-0 z-10 flex h-7 items-end" style={{ background: '#1C2127' }}>
               <TickLabels ticks={ticks} bottom={false} />
             </div>
 
@@ -284,18 +420,17 @@ export function GanttTimeline({
               );
               const wPx = rPx - lPx;
               const hov = hovProj === p.id;
+              const companyHov = hovCompany === p.companyId;
               const atCross = hoverData
                 ? new Date(p.start) <= hoverData.date && new Date(p.end) >= hoverData.date
                 : false;
-              const lit = hov || atCross || selectedId === p.id;
+              const lit = hov || companyHov || atCross || selectedId === p.id;
 
               return (
                 <div
                   key={p.id}
                   className="relative"
                   style={{ height: ROW_H, marginBottom: ROW_GAP }}
-                  onMouseEnter={() => onSetHovProj(p.id)}
-                  onMouseLeave={() => onSetHovProj(null)}
                 >
                   {/* Month grid lines */}
                   {majorTicks.map((t, i) => (
@@ -311,61 +446,95 @@ export function GanttTimeline({
                     style={{ left: todayPx }}
                   />
                   {/* Bar */}
-                  <div
-                    className="absolute flex items-center justify-center overflow-hidden rounded transition-colors duration-100"
-                    style={{
-                      left: lPx,
-                      width: Math.max(wPx, 4),
-                      top: 3,
-                      bottom: 3,
-                      background: lit ? ps.bar : ps.bg,
-                      border: `1.5px solid ${ps.bar}`,
-                      boxShadow: hov ? `0 0 14px ${ps.bar}50` : "none",
-                      opacity: lit ? 1 : 0.85,
-                    }}
-                  >
-                    {wPx > 60 && (
-                      <span
-                        className="whitespace-nowrap text-[11px] font-bold"
-                        style={{ color: lit ? "#000" : ps.bar }}
+                  {(() => {
+                    const visL = Math.max(lPx, scrollX);
+                    const visR = Math.min(lPx + wPx, scrollX + scrollViewW);
+                    const visCenter = (visL + visR) / 2;
+                    const labelOff = Math.max(35, Math.min(wPx - 35, visCenter - lPx));
+
+                    return (
+                      <div
+                        className="absolute overflow-hidden rounded cursor-pointer transition-colors duration-100"
+                        style={{
+                          left: lPx,
+                          width: Math.max(wPx, 4),
+                          top: 3,
+                          bottom: 3,
+                          background: lit ? ps.bar : ps.bg,
+                          border: `1.5px solid ${ps.bar}`,
+                          boxShadow: hov ? `0 0 14px ${ps.bar}50` : "none",
+                          opacity: lit ? 1 : 0.85,
+                        }}
+                        onMouseEnter={() => onSetHovProj(p.id)}
+                        onMouseLeave={() => onSetHovProj(null)}
+                        onClick={() => onSelectProject(p.id)}
                       >
-                        {p.seats}s &middot; {p.prob}%
-                      </span>
-                    )}
-                  </div>
+                        {wPx > 60 && (
+                          <span
+                            className="absolute top-1/2 whitespace-nowrap text-[11px] font-bold"
+                            style={{
+                              color: lit ? "#000" : ps.bar,
+                              left: labelOff,
+                              transform: "translate(-50%, -50%)",
+                            }}
+                          >
+                            {p.seats}s &middot; {p.prob}%
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
               );
             })}
 
-            {/* Lead bandwidth label */}
-            <div className="relative h-5">
-              <div className="absolute inset-x-0 top-2.5 border-t border-dashed border-muted-foreground opacity-30" />
-              <div className="absolute right-2 top-[13px] text-[10px] font-semibold text-muted-foreground">
-                LEAD BANDWIDTH: {LEAD_CEIL} PROJECTS
-              </div>
-            </div>
           </div>
+        </div>
 
-          {/* Separator */}
-          <div className="h-5 border-t border-border" />
+        {/* Separator — absolutely positioned between gantt and demand */}
+        <div
+          className="absolute inset-x-0 border-t border-border"
+          style={{ bottom: DEMAND_H, height: SEP_H }}
+        />
 
-          {/* ─── Demand chart ─── */}
-          <DemandChart
-            active={active}
-            daily={daily}
-            gran={gran}
-            timelineWidth={timelineWidth}
-            chartMax={chartMax}
-            hovProj={hovProj}
-            selectedId={selectedId}
-            hoverData={hoverData}
-            hoverX={hoverX}
-            todayPx={todayPx}
-            majorTicks={majorTicks}
-          />
+        {/* Demand scroll — absolutely positioned at bottom */}
+        <div
+          ref={demandScrollRef}
+          className="absolute inset-x-0 bottom-0 overflow-x-auto overflow-y-hidden scrollbar-thin"
+          style={{ height: DEMAND_H }}
+        >
+          <div
+            onMouseMove={onHover}
+            onMouseLeave={clearHover}
+            className="relative flex h-full cursor-crosshair flex-col"
+            style={{ width: timelineWidth }}
+          >
+            {/* Crosshair */}
+            {hoverX !== null && (
+              <div
+                className="pointer-events-none absolute inset-y-0 z-20"
+                style={{ left: hoverX, width: 1, background: "rgba(255,255,255,0.4)" }}
+              />
+            )}
 
-          {/* Bottom tick labels */}
-          <TickLabels ticks={ticks} bottom={true} />
+            <DemandChart
+              active={active}
+              daily={daily}
+              gran={gran}
+              timelineWidth={timelineWidth}
+              chartMax={chartMax}
+              hovProj={hovProj}
+              selectedId={selectedId}
+              hoverData={hoverData}
+              hoverX={hoverX}
+              todayPx={todayPx}
+              majorTicks={majorTicks}
+              overlayBands={overlayBands}
+            />
+
+            {/* Bottom tick labels */}
+            <TickLabels ticks={ticks} bottom={true} />
+          </div>
         </div>
       </div>
     </div>

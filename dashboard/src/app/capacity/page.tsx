@@ -1,9 +1,15 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import type { DailyPoint } from "./capacity-data";
 import { DATA } from "./capacity-data";
-import { SUPPLY, buildDaily, flattenProjects } from "./capacity-utils";
+import {
+  SUPPLY, TIER_META, buildDaily, flattenProjects,
+  categorizeCompanies, DEFAULT_STAGE_ORDER, DEFAULT_STAGE_VISIBLE,
+  DEFAULT_GROUP_ORDER, DEFAULT_GROUP_ENABLED, DEFAULT_GROUP_SORT,
+  type PipelineStage, type StagedGroup, type GroupDim, type DimSortKey,
+  type ViewPreset,
+} from "./capacity-utils";
 import { CapacityHeader } from "./capacity-header";
 import { ProjectSidebar, type FlatProject } from "./project-sidebar";
 import { GanttTimeline } from "./gantt-timeline";
@@ -19,13 +25,88 @@ export default function CapacityPage() {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [hovProj, setHovProj] = useState<string | null>(null);
   const [hoverData, setHoverData] = useState<DailyPoint | null>(null);
-  const [gran, setGran] = useState("month");
+  const [gran, setGran] = useState("quarter");
+
+  // Keyboard shortcuts: a=all, y=year, q=quarter, w=week
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      const map: Record<string, string> = { a: "all", y: "year", q: "quarter", w: "week" };
+      const g = map[e.key.toLowerCase()];
+      if (g) setGran(g);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedCoId, setSelectedCoId] = useState<string | null>(null);
-  const [groupBy, setGroupBy] = useState<"company" | "status">("company");
+  const [hovCompany, setHovCompany] = useState<string | null>(null);
+  const [viewFilter, setViewFilter] = useState("all");
+  const [stageOrder, setStageOrder] = useState<PipelineStage[]>(DEFAULT_STAGE_ORDER);
+  const [stageVisible, setStageVisible] = useState<Record<PipelineStage, boolean>>(DEFAULT_STAGE_VISIBLE);
+  const [groupOrder, setGroupOrder] = useState<GroupDim[]>(DEFAULT_GROUP_ORDER);
+  const [groupEnabled, setGroupEnabled] = useState<Record<GroupDim, boolean>>(DEFAULT_GROUP_ENABLED);
+  const [groupSort, setGroupSort] = useState<Record<GroupDim, DimSortKey>>(DEFAULT_GROUP_SORT);
+
+  // ─── Stage grouping ───
+  const stagedCompanies = useMemo<StagedGroup[]>(() => {
+    const grouped = categorizeCompanies(companies);
+    return stageOrder
+      .filter((s) => stageVisible[s])
+      .map((s) => ({ stage: s, companies: grouped[s] }))
+      .filter((g) => g.companies.length > 0);
+  }, [companies, stageOrder, stageVisible]);
 
   // ─── Derived ───
-  const active = useMemo(() => allProjects.filter((p) => enabled[p.id]), [allProjects, enabled]);
+  const active = useMemo(() => {
+    let list = allProjects.filter((p) => enabled[p.id]);
+    if (viewFilter === "all") {
+      // Filter by visible stages — only include projects from companies in visible stage groups
+      const visibleCoIds = new Set(stagedCompanies.flatMap((g) => g.companies.map((c) => c.id)));
+      list = list.filter((p) => visibleCoIds.has(p.companyId));
+    } else if (viewFilter === "clients-active") {
+      const activeCoIds = new Set(
+        allProjects.filter((p) => p.tier === "active").map((p) => p.companyId)
+      );
+      list = list.filter((p) => activeCoIds.has(p.companyId));
+    } else if (["active", "pipeline", "speculative", "internal"].includes(viewFilter)) {
+      list = list.filter((p) => p.tier === viewFilter);
+    } else {
+      list = list.filter((p) => p.companyId === viewFilter);
+    }
+    return list;
+  }, [allProjects, enabled, viewFilter, stagedCompanies]);
+
+  // Companies/projects visible in the sidebar (matches the viewFilter)
+  const filteredCompanies = useMemo(() => {
+    if (viewFilter === "all") {
+      return stagedCompanies.flatMap((g) => g.companies);
+    }
+    if (viewFilter === "clients-active") {
+      return companies.filter((co) => co.projects.some((p) => p.tier === "active"));
+    }
+    if (["active", "pipeline", "speculative", "internal"].includes(viewFilter)) {
+      return companies
+        .map((co) => ({ ...co, projects: co.projects.filter((p) => p.tier === viewFilter) }))
+        .filter((co) => co.projects.length > 0);
+    }
+    return companies.filter((co) => co.id === viewFilter);
+  }, [companies, viewFilter, stagedCompanies]);
+
+  const sortedActive = useMemo(() => {
+    // Build company position map from filteredCompanies (reflects stage order)
+    const coPos = new Map<string, number>();
+    filteredCompanies.forEach((co, i) => coPos.set(co.id, i));
+    const sorted = [...active];
+    sorted.sort((a, b) => {
+      const posA = coPos.get(a.companyId) ?? 999;
+      const posB = coPos.get(b.companyId) ?? 999;
+      if (posA !== posB) return posA - posB;
+      return new Date(a.start).getTime() - new Date(b.start).getTime();
+    });
+    return sorted;
+  }, [active, filteredCompanies]);
+
   const daily = useMemo(() => buildDaily(active), [active]);
   const peakRaw = Math.max(...daily.map((d) => d.raw), 0);
   const maxGap = Math.max(0, ...daily.map((d) => Math.round((d.raw - SUPPLY) * 10) / 10));
@@ -90,6 +171,16 @@ export default function CapacityPage() {
     setSelectedCoId(null);
   }, []);
 
+  const applyView = useCallback(
+    (view: ViewPreset) => {
+      setGroupOrder([...view.groupOrder]);
+      setGroupEnabled({ ...view.groupEnabled });
+      setGroupSort({ ...view.groupSort });
+      setStageVisible({ ...view.stageVisible });
+    },
+    []
+  );
+
   const showDetail = selectedId !== null || selectedCoId !== null;
 
   return (
@@ -106,31 +197,49 @@ export default function CapacityPage() {
       <div className="flex flex-1 overflow-hidden min-h-0">
         <ProjectSidebar
           companies={companies}
+          filteredCompanies={filteredCompanies}
+          stagedCompanies={stagedCompanies}
           allProjects={allProjects}
           enabled={enabled}
           expanded={expanded}
           hovProj={hovProj}
+          hovCompany={hovCompany}
           selectedId={selectedId}
           selectedCoId={selectedCoId}
-          groupBy={groupBy}
+          hoverData={hoverData}
+          viewFilter={viewFilter}
+          stageOrder={stageOrder}
+          stageVisible={stageVisible}
           onToggleEn={toggleEn}
           onToggleGroup={toggleGroup}
           onToggleExpand={toggleExpand}
           onSelectProject={selectProject}
           onSelectCompany={selectCompany}
-          onSetGroupBy={setGroupBy}
           onSetHovProj={setHovProj}
+          onSetHovCompany={setHovCompany}
+          onSetViewFilter={setViewFilter}
+          onSetStageOrder={setStageOrder}
+          onSetStageVisible={setStageVisible}
+          groupOrder={groupOrder}
+          groupEnabled={groupEnabled}
+          groupSort={groupSort}
+          onSetGroupOrder={setGroupOrder}
+          onSetGroupEnabled={setGroupEnabled}
+          onSetGroupSort={setGroupSort}
+          onApplyView={applyView}
         />
 
         <GanttTimeline
-          active={active}
+          active={sortedActive}
           daily={daily}
           gran={gran}
           hovProj={hovProj}
+          hovCompany={hovCompany}
           selectedId={selectedId}
           hoverData={hoverData}
           onHoverChange={(data, _x) => setHoverData(data)}
           onSetHovProj={setHovProj}
+          onSelectProject={selectProject}
         />
 
         {showDetail && (

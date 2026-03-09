@@ -106,12 +106,25 @@ export function createCanvasCallbacks(input: CanvasCallbackInput) {
 
   // ── Interaction callbacks ──────────────────────────
 
+  // Background click is debounced: if a node click fires within 100ms,
+  // it cancels the background click. This prevents the shadow-canvas
+  // throttle (800ms) from causing missed node clicks that register as
+  // background clicks instead.
+  let bgClickTimer: ReturnType<typeof setTimeout> | null = null;
+
   const handleNodeClick = (node: ForceNode) => {
+    if (bgClickTimer) { clearTimeout(bgClickTimer); bgClickTimer = null; }
     const found = enrichedNodes.find((n) => n.id === node.id);
     setSelectedNode(found ?? null);
   };
 
-  const handleBackgroundClick = () => setSelectedNode(null);
+  const handleBackgroundClick = () => {
+    if (bgClickTimer) clearTimeout(bgClickTimer);
+    bgClickTimer = setTimeout(() => {
+      bgClickTimer = null;
+      setSelectedNode(null);
+    }, 100);
+  };
 
   const handleNodeDragEnd = (node: ForceNode) => {
     node.fx = node.x;
@@ -241,9 +254,16 @@ export function createCanvasCallbacks(input: CanvasCallbackInput) {
     const iconW = 20 / globalScale;
     const height = 24 / globalScale;
     const totalWidth = iconW + textWidth + padding * 2;
+    // Expand hit area by 4px (scaled) on each side for easier clicking
+    const expand = 4 / globalScale;
 
     ctx.fillStyle = color;
-    ctx.fillRect(node.x - totalWidth / 2, node.y - height / 2, totalWidth, height);
+    ctx.fillRect(
+      node.x - totalWidth / 2 - expand,
+      node.y - height / 2 - expand,
+      totalWidth + expand * 2,
+      height + expand * 2,
+    );
   };
 
   const linkCanvasObject = (

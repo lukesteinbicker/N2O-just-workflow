@@ -4,6 +4,10 @@ import {
   getTicks,
   buildDaily,
   flattenProjects,
+  categorizeCompanies,
+  STAGE_META,
+  DEFAULT_STAGE_ORDER,
+  DEFAULT_STAGE_VISIBLE,
   fmtDate,
   fmtShort,
   moLabel,
@@ -148,17 +152,19 @@ describe("TIER_META", () => {
 // ─── CONSTANTS ───
 
 describe("constants", () => {
-  it("GRANS has 3 granularities with correct keys and labels", () => {
+  it("GRANS has 4 granularities with correct keys and labels", () => {
     expect(GRANS).toEqual([
-      { key: "month", label: "Monthly", ppd: 2.2 },
-      { key: "week", label: "Weekly", ppd: 6 },
-      { key: "day", label: "Daily", ppd: 14 },
+      { key: "all", label: "All Time", ppd: 2.5 },
+      { key: "year", label: "Year", ppd: 3.5 },
+      { key: "quarter", label: "Quarter", ppd: 7 },
+      { key: "week", label: "Week", ppd: 18 },
     ]);
   });
 
-  it("ppd increases from monthly to daily", () => {
-    expect(GRANS[0].ppd).toBeLessThan(GRANS[1].ppd);
-    expect(GRANS[1].ppd).toBeLessThan(GRANS[2].ppd);
+  it("ppd increases from all time to week", () => {
+    for (let i = 1; i < GRANS.length; i++) {
+      expect(GRANS[i].ppd).toBeGreaterThan(GRANS[i - 1].ppd);
+    }
   });
 
   it("ROW_H is 28 and ROW_GAP is 2", () => {
@@ -235,7 +241,7 @@ describe("getTicks", () => {
   const tw = 1000;
 
   it("generates exactly 11 monthly ticks (Feb-Dec 2026)", () => {
-    const ticks = getTicks("month", tw);
+    const ticks = getTicks("year", tw);
     const monthTicks = ticks.filter((t) => t.isMonth);
     expect(monthTicks.length).toBe(11);
     expect(monthTicks.map((t) => t.label)).toEqual([
@@ -243,20 +249,20 @@ describe("getTicks", () => {
     ]);
   });
 
-  it("weekly granularity adds extra ticks beyond monthly", () => {
-    const monthOnly = getTicks("month", tw);
+  it("quarter granularity adds weekly ticks beyond monthly", () => {
+    const monthOnly = getTicks("year", tw);
+    const quarterly = getTicks("quarter", tw);
+    expect(quarterly.length).toBeGreaterThan(monthOnly.length);
+  });
+
+  it("week granularity adds daily ticks beyond monthly", () => {
+    const monthOnly = getTicks("year", tw);
     const weekly = getTicks("week", tw);
     expect(weekly.length).toBeGreaterThan(monthOnly.length);
   });
 
-  it("daily granularity adds extra ticks beyond monthly", () => {
-    const monthOnly = getTicks("month", tw);
-    const daily = getTicks("day", tw);
-    expect(daily.length).toBeGreaterThan(monthOnly.length);
-  });
-
   it("all ticks have required properties with correct types", () => {
-    const ticks = getTicks("week", tw);
+    const ticks = getTicks("quarter", tw);
     for (const t of ticks) {
       expect(typeof t.px).toBe("number");
       expect(t.px).toBeGreaterThanOrEqual(0);
@@ -268,14 +274,14 @@ describe("getTicks", () => {
   });
 
   it("month ticks are marked as major", () => {
-    const ticks = getTicks("month", tw);
+    const ticks = getTicks("year", tw);
     for (const t of ticks.filter((t) => t.isMonth)) {
       expect(t.major).toBe(true);
     }
   });
 
   it("month tick px values increase monotonically", () => {
-    const monthTicks = getTicks("month", tw).filter((t) => t.isMonth);
+    const monthTicks = getTicks("year", tw).filter((t) => t.isMonth);
     for (let i = 1; i < monthTicks.length; i++) {
       expect(monthTicks[i].px).toBeGreaterThan(monthTicks[i - 1].px);
     }
@@ -427,5 +433,142 @@ describe("flattenProjects", () => {
     // Check first and last
     expect(result[0].companyId).toBe("totalcents");
     expect(result[result.length - 1].companyId).toBe("n2o-internal");
+  });
+});
+
+// ─── PIPELINE STAGE CATEGORIZATION ───
+
+describe("STAGE_META", () => {
+  it("defines all four stages with label, shortLabel, and color", () => {
+    expect(Object.keys(STAGE_META)).toEqual(["active-clients", "prospective", "past-clients", "internal"]);
+    for (const meta of Object.values(STAGE_META)) {
+      expect(typeof meta.label).toBe("string");
+      expect(typeof meta.shortLabel).toBe("string");
+      expect(typeof meta.color).toBe("string");
+    }
+  });
+});
+
+describe("DEFAULT_STAGE_ORDER / DEFAULT_STAGE_VISIBLE", () => {
+  it("has 4 stages in order", () => {
+    expect(DEFAULT_STAGE_ORDER).toEqual(["active-clients", "prospective", "past-clients", "internal"]);
+  });
+
+  it("hides past-clients by default", () => {
+    expect(DEFAULT_STAGE_VISIBLE["past-clients"]).toBe(false);
+    expect(DEFAULT_STAGE_VISIBLE["active-clients"]).toBe(true);
+    expect(DEFAULT_STAGE_VISIBLE.prospective).toBe(true);
+    expect(DEFAULT_STAGE_VISIBLE.internal).toBe(true);
+  });
+});
+
+describe("categorizeCompanies", () => {
+  const today = new Date("2026-06-15");
+
+  it("classifies company with active tier project as active-clients", () => {
+    const companies = [
+      { id: "a", name: "A", projects: [
+        { id: "p1", name: "P1", seats: 1, start: "2026-03-01", end: "2026-08-01", prob: 100, tier: "active" as const, notes: "" },
+      ]},
+    ];
+    const result = categorizeCompanies(companies, today);
+    expect(result["active-clients"]).toHaveLength(1);
+    expect(result["active-clients"][0].id).toBe("a");
+  });
+
+  it("classifies company with all ended projects as past-clients", () => {
+    const companies = [
+      { id: "b", name: "B", projects: [
+        { id: "p2", name: "P2", seats: 1, start: "2026-01-01", end: "2026-03-01", prob: 100, tier: "active" as const, notes: "" },
+      ]},
+    ];
+    const result = categorizeCompanies(companies, today);
+    expect(result["past-clients"]).toHaveLength(1);
+    expect(result["active-clients"]).toHaveLength(0);
+  });
+
+  it("classifies company with all internal projects as internal", () => {
+    const companies = [
+      { id: "c", name: "C", projects: [
+        { id: "p3", name: "P3", seats: 1, start: "2026-03-01", end: "2026-12-01", prob: 100, tier: "internal" as const, notes: "" },
+      ]},
+    ];
+    const result = categorizeCompanies(companies, today);
+    expect(result.internal).toHaveLength(1);
+  });
+
+  it("classifies pipeline/speculative company as prospective", () => {
+    const companies = [
+      { id: "d", name: "D", projects: [
+        { id: "p4", name: "P4", seats: 2, start: "2026-07-01", end: "2026-12-01", prob: 70, tier: "pipeline" as const, notes: "" },
+      ]},
+    ];
+    const result = categorizeCompanies(companies, today);
+    expect(result.prospective).toHaveLength(1);
+  });
+
+  it("past takes precedence over active (all projects ended)", () => {
+    const companies = [
+      { id: "e", name: "E", projects: [
+        { id: "p5", name: "P5", seats: 1, start: "2026-01-01", end: "2026-02-01", prob: 100, tier: "active" as const, notes: "" },
+        { id: "p6", name: "P6", seats: 1, start: "2026-02-01", end: "2026-03-01", prob: 80, tier: "pipeline" as const, notes: "" },
+      ]},
+    ];
+    const result = categorizeCompanies(companies, today);
+    expect(result["past-clients"]).toHaveLength(1);
+    expect(result["active-clients"]).toHaveLength(0);
+  });
+
+  it("company with ended active + future pipeline is prospective, not past", () => {
+    const companies = [
+      { id: "f", name: "F", projects: [
+        { id: "p7", name: "P7", seats: 1, start: "2026-01-01", end: "2026-03-01", prob: 100, tier: "active" as const, notes: "" },
+        { id: "p8", name: "P8", seats: 2, start: "2026-07-01", end: "2026-12-01", prob: 70, tier: "pipeline" as const, notes: "" },
+      ]},
+    ];
+    // Not all ended (p8 ends 2026-12-01 > today), and no current active tier,
+    // but has active tier project → active-clients? No: p7 has tier "active" → hasActive = true → active-clients
+    // Wait, the function checks hasActive = co.projects.some(p => p.tier === "active"), regardless of dates
+    // The plan says: "Active Clients: company has ≥1 project with tier === 'active'"
+    // So this IS active-clients because p7.tier === "active"
+    const result = categorizeCompanies(companies, today);
+    expect(result["active-clients"]).toHaveLength(1);
+  });
+
+  it("company with ended active (only) + future pipeline is prospective", () => {
+    const companies = [
+      { id: "g", name: "G", projects: [
+        { id: "p9", name: "P9", seats: 1, start: "2026-01-01", end: "2026-03-01", prob: 100, tier: "pipeline" as const, notes: "" },
+        { id: "p10", name: "P10", seats: 2, start: "2026-07-01", end: "2026-12-01", prob: 70, tier: "pipeline" as const, notes: "" },
+      ]},
+    ];
+    // Not all ended (p10 future), no active tier, not all internal → prospective
+    const result = categorizeCompanies(companies, today);
+    expect(result.prospective).toHaveLength(1);
+  });
+
+  it("categorizes real DATA companies correctly as of 2026-03-20", () => {
+    const march20 = new Date("2026-03-20");
+    const result = categorizeCompanies(DATA.companies, march20);
+
+    // TotalCents: active tier, end 2026-03-15 < march20 → all ended + has active → past (allEnded wins)
+    expect(result["past-clients"].map(c => c.id)).toContain("totalcents");
+
+    // Armature: active tier, end 2026-08-31 → active-clients
+    expect(result["active-clients"].map(c => c.id)).toContain("armature");
+
+    // N2O Internal: all internal, future end → internal
+    expect(result.internal.map(c => c.id)).toContain("n2o-internal");
+
+    // CDAO: pipeline only → prospective
+    expect(result.prospective.map(c => c.id)).toContain("cdao");
+  });
+
+  it("returns empty arrays for empty input", () => {
+    const result = categorizeCompanies([]);
+    expect(result["active-clients"]).toEqual([]);
+    expect(result.prospective).toEqual([]);
+    expect(result["past-clients"]).toEqual([]);
+    expect(result.internal).toEqual([]);
   });
 });

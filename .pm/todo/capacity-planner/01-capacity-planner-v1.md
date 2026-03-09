@@ -73,6 +73,33 @@ Give Wiley a live capacity planner inside the N2O dashboard that answers three q
 
 For v1, the JSON data file is imported directly — no GraphQL, no database. The data is copied from `platform/reference/n2o-capacity-data.json` into `capacity-data.ts` as a typed constant.
 
+#### Timeline overlays
+
+The data model includes an `overlays` array for notable periods that display as shaded regions on the Gantt timeline and demand chart. These are purely visual — they don't modify the supply line or any calculations. They exist so you can see "finals start here" or "summer break runs through here" and make staffing decisions yourself.
+
+```ts
+interface TimelineOverlay {
+  id: string;
+  label: string;       // e.g. "Final Exams", "Summer Break"
+  start: string;       // ISO date
+  end: string;         // ISO date
+  color?: string;      // optional override; defaults to a subtle neutral
+  notes?: string;
+}
+```
+
+Overlays render as translucent vertical bands spanning both the Gantt and demand chart, with a small label at the top. The actual capacity impact of each period varies per person (some students gain availability in summer, finals hit different schools at different times), so the overlay is context for the human — not an input to the model.
+
+**Initial overlays:**
+
+```ts
+overlays: [
+  { id: "finals-sp26", label: "Finals", start: "2026-05-04", end: "2026-05-15", notes: "Spring semester final exams" },
+  { id: "summer-26", label: "Summer Break", start: "2026-05-16", end: "2026-08-24", notes: "Summer vacation period" },
+  { id: "finals-fa26", label: "Finals", start: "2026-12-07", end: "2026-12-18", notes: "Fall semester final exams" },
+]
+```
+
 Future iterations will:
 - Add a `capacity_projects` table to the platform database
 - Expose it via GraphQL
@@ -80,7 +107,8 @@ Future iterations will:
 
 ### Out of scope (future specs)
 
-- Dynamic supply model (academic calendar curves) → future spec
+- **Unified sidebar + gantt labels** — Merge the ProjectSidebar and gantt label column into a single left panel where each project row aligns 1:1 with its gantt bar. Stage headers ("ACTIVE CLIENTS", "PROSPECTIVE") become thin dividers spanning both the sidebar and gantt. Company headers expand/collapse their children in both panels simultaneously. Eliminates the duplicative project name columns. This is the "Option B" approach — most polished result but a meaningful layout refactor touching ProjectSidebar, GanttTimeline, and scroll sync logic.
+- Dynamic supply model (per-person availability curves, academic calendar adjustments) → future spec
 - Attio CRM integration → future spec
 - Variable seat phases → future spec
 - Assignment tracking (who is on what) → future spec

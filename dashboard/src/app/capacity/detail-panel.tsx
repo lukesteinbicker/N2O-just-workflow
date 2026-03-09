@@ -1,7 +1,8 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import type { Project, Company } from "./capacity-data";
-import { getPS, TIER_META, fmtShort } from "./capacity-utils";
+import { getPS, TIER_META, fmtShort, T_START } from "./capacity-utils";
 import type { FlatProject } from "./project-sidebar";
 
 // ─── Field component ───
@@ -112,6 +113,10 @@ export function DetailPanel({
   onToggleEn,
   onUpdateProject,
 }: DetailPanelProps) {
+  // Defer Date.now() to avoid SSR/client hydration mismatch
+  const [now, setNow] = useState(T_START.getTime());
+  useEffect(() => setNow(Date.now()), []);
+
   const selectedProject = allProjects.find((p) => p.id === selectedId) || null;
   const selectedCompany =
     companies.find((c) => c.id === selectedCoId) ||
@@ -187,7 +192,7 @@ export function DetailPanel({
             const on = enabled[p.id];
             const pStart = new Date(p.start);
             const pEnd = new Date(p.end);
-            const progress = Math.min(100, Math.max(5, ((Date.now() - pStart.getTime()) / (pEnd.getTime() - pStart.getTime())) * 100));
+            const progress = Math.min(100, Math.max(5, ((now - pStart.getTime()) / (pEnd.getTime() - pStart.getTime())) * 100));
 
             return (
               <div
@@ -264,7 +269,7 @@ export function DetailPanel({
                       100,
                       Math.max(
                         5,
-                        ((Date.now() - new Date(selectedProject.start).getTime()) /
+                        ((now - new Date(selectedProject.start).getTime()) /
                           (new Date(selectedProject.end).getTime() - new Date(selectedProject.start).getTime())) *
                           100
                       )

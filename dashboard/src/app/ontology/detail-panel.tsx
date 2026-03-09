@@ -73,13 +73,13 @@ export function DetailPanel({
   ];
 
   return (
-    <div className="flex flex-shrink-0" style={{ width: `${sidebarWidth}px` }}>
+    <div className="flex flex-shrink-0 border-l border-border bg-card" style={{ width: `${sidebarWidth}px` }}>
       {/* Drag handle */}
       <div
         onMouseDown={handleSidebarMouseDown}
         className="w-1 cursor-col-resize hover:bg-primary/30 active:bg-primary/50 transition-colors flex-shrink-0"
       />
-      <div className="flex-1 min-w-0 border-l border-border bg-card overflow-y-auto scrollbar-thin">
+      <div className="flex-1 min-w-0 overflow-y-auto scrollbar-thin">
         <div className="p-4 space-y-4">
           {/* Header with category icon */}
           <div className="flex items-center justify-between">

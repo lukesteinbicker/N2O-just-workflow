@@ -28,6 +28,7 @@ export interface Company {
 export interface CapacityData {
   config: Config;
   companies: Company[];
+  overlays: TimelineOverlay[];
 }
 
 export interface DailyPoint {
@@ -55,6 +56,15 @@ export interface TierMeta {
   label: string;
   color: string;
   order: number;
+}
+
+export interface TimelineOverlay {
+  id: string;
+  label: string;
+  start: string;
+  end: string;
+  color?: string;
+  notes?: string;
 }
 
 export const DATA: CapacityData = {
@@ -151,7 +161,13 @@ export const DATA: CapacityData = {
       projects: [
         { id: "onb", name: "Onboarding Platform", seats: 1, start: "2026-02-15", end: "2026-03-15", prob: 100, tier: "internal", notes: "Wrap in ~1 week; then off the board." },
         { id: "wf", name: "Workflow / Delivery", seats: 1, start: "2026-02-15", end: "2026-12-31", prob: 100, tier: "internal", notes: "Dedicated 1 seat always." },
+        { id: "fkaren", name: "FKaren", seats: 1, start: "2026-02-02", end: "2026-03-22", prob: 100, tier: "internal", notes: "Internal load balancer project." },
       ],
     },
+  ],
+  overlays: [
+    { id: "finals-sp26", label: "Finals", start: "2026-04-30", end: "2026-05-08", color: "rgba(255,183,77,0.08)", notes: "UVA Spring 2026 final examinations" },
+    { id: "summer-26", label: "Summer Break", start: "2026-05-08", end: "2026-08-24", color: "rgba(66,165,245,0.08)", notes: "Summer break — UVA fall arrival Aug 20-24, classes Aug 25" },
+    { id: "finals-fa26", label: "Finals", start: "2026-12-10", end: "2026-12-18", color: "rgba(255,183,77,0.08)", notes: "UVA Fall 2026 final examinations" },
   ],
 };

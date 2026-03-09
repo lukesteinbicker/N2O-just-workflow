@@ -137,7 +137,7 @@ export function HealthFooter() {
   if (loading && !data) return null;
 
   return (
-    <div className="border-t border-border bg-card flex-shrink-0">
+    <div className="border-t border-border bg-card flex-shrink-0" data-health-footer>
       {/* Collapsed bar */}
       <button
         onClick={() => setExpanded((e) => !e)}
