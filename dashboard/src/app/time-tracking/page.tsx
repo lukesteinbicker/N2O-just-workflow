@@ -3,6 +3,8 @@
 import { useState, useMemo, useCallback } from "react";
 import { useTimeTrackingData } from "./use-time-tracking-data";
 import { PeopleView } from "./components/people-view";
+import { WeekCalendarView } from "./components/week-calendar-view";
+import { TrendsView } from "./components/trends-view";
 import {
   FilterBar,
   type Filters,
@@ -133,14 +135,22 @@ export default function TimeTrackingPage() {
         />
       )}
       {view === "calendar" && (
-        <div className="flex items-center justify-center h-64 text-muted-foreground text-sm">
-          Calendar view — coming in Task 4
-        </div>
+        <WeekCalendarView
+          entries={filteredEntries}
+          members={members}
+          memberColors={memberColors}
+          dateRange={dateRange}
+          projects={projects}
+          tags={tags}
+        />
       )}
       {view === "trends" && (
-        <div className="flex items-center justify-center h-64 text-muted-foreground text-sm">
-          Trends view — coming in Task 4
-        </div>
+        <TrendsView
+          entries={filteredEntries}
+          members={members.filter((m) => m.active)}
+          memberColors={memberColors}
+          dateRange={dateRange}
+        />
       )}
     </div>
   );

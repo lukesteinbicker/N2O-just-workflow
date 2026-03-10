@@ -90,3 +90,108 @@ export const ROLE_TARGETS: Record<string, number> = {
   developer: 35,
   "non-developer": 30,
 };
+
+// Calendar utility functions
+
+export function formatTimeShort(isoStr: string): string {
+  const d = new Date(isoStr);
+  return d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+}
+
+export function getMinutesFromISO(isoStr: string): number {
+  const d = new Date(isoStr);
+  return d.getHours() * 60 + d.getMinutes();
+}
+
+export function getNonOverlappingSeconds(entries: { start: string; stop: string | null; seconds: number }[]): number {
+  if (entries.length === 0) return 0;
+  if (entries.length === 1) return entries[0].seconds;
+  const intervals = entries
+    .map((e) => {
+      const startMs = new Date(e.start).getTime();
+      const endMs = e.stop ? new Date(e.stop).getTime() : startMs + e.seconds * 1000;
+      return [startMs, endMs] as [number, number];
+    })
+    .filter(([s, e]) => e > s)
+    .sort((a, b) => a[0] - b[0]);
+  if (intervals.length === 0) return 0;
+  const merged: [number, number][] = [[...intervals[0]]];
+  for (let i = 1; i < intervals.length; i++) {
+    const last = merged[merged.length - 1];
+    if (intervals[i][0] < last[1]) {
+      last[1] = Math.max(last[1], intervals[i][1]);
+    } else {
+      merged.push([...intervals[i]]);
+    }
+  }
+  return merged.reduce((sum, [s, e]) => sum + (e - s) / 1000, 0);
+}
+
+export interface LayoutEntry {
+  uid: number;
+  startMin: number;
+  endMin: number;
+  column: number;
+  totalColumns: number;
+  color: string;
+  member: { id: number; togglName: string } | undefined;
+  description: string;
+  start: string;
+  stop: string | null;
+  seconds: number;
+  projectId: number | null;
+  tagIds: number[];
+  isRunning?: boolean;
+}
+
+export function layoutOverlappingEntries(
+  dayEntries: Record<number, { description: string; start: string; stop: string | null; seconds: number; projectId: number | null; tagIds: number[] }[]>,
+  members: { id: number; togglName: string }[],
+  memberColors: Record<number, string>,
+): LayoutEntry[] {
+  const allEntries: LayoutEntry[] = [];
+  for (const [uid, entries] of Object.entries(dayEntries)) {
+    const userId = parseInt(uid);
+    const member = members.find((m) => m.id === userId);
+    const color = memberColors[userId] || "#5c6bc0";
+    for (const entry of entries) {
+      const startMin = getMinutesFromISO(entry.start);
+      const endMin = Math.min(startMin + entry.seconds / 60, 1440);
+      allEntries.push({
+        ...entry,
+        uid: userId,
+        startMin,
+        endMin,
+        column: 0,
+        totalColumns: 1,
+        member,
+        color,
+      });
+    }
+  }
+  allEntries.sort((a, b) => a.startMin - b.startMin || (b.endMin - b.startMin) - (a.endMin - a.startMin));
+
+  const columns: { entries: LayoutEntry[]; lastEnd: number }[] = [];
+  for (const entry of allEntries) {
+    let placed = false;
+    for (let col = 0; col < columns.length; col++) {
+      if (entry.startMin >= columns[col].lastEnd) {
+        columns[col].entries.push(entry);
+        columns[col].lastEnd = entry.endMin;
+        entry.column = col;
+        placed = true;
+        break;
+      }
+    }
+    if (!placed) {
+      entry.column = columns.length;
+      columns.push({ entries: [entry], lastEnd: entry.endMin });
+    }
+  }
+
+  const totalColumns = columns.length || 1;
+  for (const entry of allEntries) {
+    entry.totalColumns = totalColumns;
+  }
+  return allEntries;
+}
