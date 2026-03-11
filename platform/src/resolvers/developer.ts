@@ -1,12 +1,15 @@
 import type { Context } from "../context.js";
 import { queryAll, queryOne } from "../db-adapter.js";
 import { mapDeveloper, mapTask } from "./mappers.js";
+import { isAdmin, currentUserName } from "../auth.js";
 
 export { mapDeveloper };
 
 export const developerResolvers = {
   Query: {
     developer: async (_: any, args: { name: string }, ctx: Context) => {
+      // Engineers can only view their own profile
+      if (!isAdmin(ctx) && args.name !== currentUserName(ctx)) return null;
       const row = await queryOne(
         ctx.db,
         "SELECT * FROM developers WHERE name = ?",
@@ -16,6 +19,13 @@ export const developerResolvers = {
     },
 
     developers: async (_: any, __: any, ctx: Context) => {
+      // Engineers: return only self
+      if (!isAdmin(ctx)) {
+        const name = currentUserName(ctx);
+        if (!name) return [];
+        const row = await queryOne(ctx.db, "SELECT * FROM developers WHERE name = ?", [name]);
+        return row ? [mapDeveloper(row)] : [];
+      }
       const rows = await queryAll(
         ctx.db,
         "SELECT * FROM developers ORDER BY name"

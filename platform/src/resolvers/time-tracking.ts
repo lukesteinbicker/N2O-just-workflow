@@ -2,6 +2,7 @@
 // Provider: Toggl Track (abstracted behind generic timeTracking* query names).
 import type { Context } from "../context.js";
 import { queryAll, queryOne } from "../db-adapter.js";
+import { requireAdmin } from "../auth.js";
 import {
   fetchToggl,
   cacheGet,
@@ -56,6 +57,7 @@ export const timeTrackingResolvers = {
     },
 
     timeTrackingMembers: async (_: any, __: any, ctx: Context) => {
+      requireAdmin(ctx);
       const token = getToken();
       const wsId = await getWorkspaceId(token);
       const cacheKey = "toggl:members";
@@ -276,6 +278,7 @@ export const timeTrackingResolvers = {
       args: { id: number; role?: string; active?: boolean },
       ctx: Context
     ) => {
+      requireAdmin(ctx);
       // args.id is the time tracking user_id. Find the matching developer by time_tracking_user_id.
       const dev = await queryOne(
         ctx.db,

@@ -1,5 +1,6 @@
 import type { Context } from "../context.js";
 import { queryAll } from "../db-adapter.js";
+import { requireAdmin } from "../auth.js";
 
 interface StreamConfig {
   stream: string;
@@ -18,6 +19,7 @@ const STREAMS: StreamConfig[] = [
 export const healthResolvers = {
   Query: {
     dataHealth: async (_: any, __: any, ctx: Context) => {
+      requireAdmin(ctx);
       const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000)
         .toISOString()
         .slice(0, 19);

@@ -1,10 +1,32 @@
 "use client";
 
 import { ApolloClient, InMemoryCache, HttpLink } from "@apollo/client/core";
+import { setContext } from "@apollo/client/link/context";
 import { ApolloProvider } from "@apollo/client/react";
+import { supabase } from "./supabase";
+
+const httpLink = new HttpLink({ uri: "http://localhost:4000/graphql" });
+
+const authLink = setContext(async (_, { headers }) => {
+  if (!supabase) return { headers };
+
+  const { data: { session } } = await supabase.auth.getSession();
+
+  if (!session?.access_token) {
+    // No session — let proxy handle the redirect
+    return { headers };
+  }
+
+  return {
+    headers: {
+      ...headers,
+      authorization: `Bearer ${session.access_token}`,
+    },
+  };
+});
 
 const client = new ApolloClient({
-  link: new HttpLink({ uri: "http://localhost:4000/graphql" }),
+  link: authLink.concat(httpLink),
   cache: new InMemoryCache(),
 });
 

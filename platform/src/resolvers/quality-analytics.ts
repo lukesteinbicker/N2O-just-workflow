@@ -1,5 +1,6 @@
 import type { Context } from "../context.js";
 import { queryAll, whereClause } from "../db-adapter.js";
+import { isAdmin, currentUserName, requireAdmin } from "../auth.js";
 
 export const qualityQueryResolvers = {
   developerQuality: async (
@@ -9,7 +10,11 @@ export const qualityQueryResolvers = {
   ) => {
     const conditions: string[] = ["owner IS NOT NULL", "status = 'green'"];
     const params: any[] = [];
-    if (args.owner) {
+    // Engineers: force owner = self
+    if (!isAdmin(ctx)) {
+      const name = currentUserName(ctx);
+      if (name) { conditions.push("owner = ?"); params.push(name); }
+    } else if (args.owner) {
       conditions.push("owner = ?");
       params.push(args.owner);
     }
@@ -54,7 +59,11 @@ export const qualityQueryResolvers = {
   ) => {
     const conditions: string[] = ["pattern_audited = 1", "owner IS NOT NULL"];
     const params: any[] = [];
-    if (args.owner) {
+    // Engineers: force owner = self
+    if (!isAdmin(ctx)) {
+      const name = currentUserName(ctx);
+      if (name) { conditions.push("owner = ?"); params.push(name); }
+    } else if (args.owner) {
       conditions.push("owner = ?");
       params.push(args.owner);
     }
@@ -92,6 +101,7 @@ export const qualityQueryResolvers = {
   },
 
   reversionHotspots: async (_: any, __: any, ctx: Context) => {
+    requireAdmin(ctx);
     const rows = await queryAll(
       ctx.db,
       "SELECT * FROM reversion_hotspots ORDER BY total_reversions DESC"
@@ -114,7 +124,11 @@ export const qualityQueryResolvers = {
     const conditions: string[] = [];
     const params: any[] = [];
 
-    if (args.developer) {
+    // Engineers: force developer = self
+    if (!isAdmin(ctx)) {
+      const name = currentUserName(ctx);
+      if (name) { conditions.push("t.owner = ?"); params.push(name); }
+    } else if (args.developer) {
       conditions.push("t.owner = ?");
       params.push(args.developer);
     }

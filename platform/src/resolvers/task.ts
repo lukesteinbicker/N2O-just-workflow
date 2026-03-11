@@ -1,6 +1,7 @@
 import type { Context } from "../context.js";
 import { queryAll, queryOne } from "../db-adapter.js";
 import { mapTask, mapDeveloper, mapEvent, mapTranscript } from "./mappers.js";
+import { isAdmin, currentUserName } from "../auth.js";
 
 export { mapTask, mapEvent, mapTranscript };
 
@@ -12,6 +13,9 @@ export const taskResolvers = {
         "SELECT * FROM tasks WHERE sprint = ? AND task_num = ?",
         [args.sprint, args.taskNum]
       );
+      if (!row) return null;
+      // Engineers can only see their own tasks
+      if (!isAdmin(ctx) && row.owner !== currentUserName(ctx)) return null;
       return mapTask(row);
     },
 
@@ -36,10 +40,19 @@ export const taskResolvers = {
         conditions.push("status = ?");
         params.push(args.status);
       }
-      if (args.owner) {
+
+      // Engineers: force owner = self, ignore owner arg
+      if (!isAdmin(ctx)) {
+        const name = currentUserName(ctx);
+        if (name) {
+          conditions.push("owner = ?");
+          params.push(name);
+        }
+      } else if (args.owner) {
         conditions.push("owner = ?");
         params.push(args.owner);
       }
+
       if (args.horizon) {
         conditions.push("horizon = ?");
         params.push(args.horizon);

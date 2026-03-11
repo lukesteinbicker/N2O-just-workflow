@@ -3,6 +3,8 @@ import { resolve, join } from "path";
 import { homedir } from "os";
 import { execSync } from "child_process";
 import Database from "better-sqlite3";
+import { requireAdmin } from "../auth.js";
+import type { Context } from "../context.js";
 
 // ── JSONL parser ────────────────────────────────────────
 
@@ -404,7 +406,9 @@ export const conversationResolvers = {
     conversationFeed: async (
       _: any,
       args: { limit?: number; developer?: string },
+      ctx: Context,
     ) => {
+      requireAdmin(ctx);
       const allSessions = getAllSessions();
       const limit = Math.min(args.limit || 20, 100);
 

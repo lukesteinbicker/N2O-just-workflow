@@ -2,6 +2,7 @@ import { GraphQLError } from "graphql";
 import type { Context } from "../context.js";
 import { queryOne, queryAll } from "../db-adapter.js";
 import { mapTask } from "./mappers.js";
+import { requireAdmin, isAdmin, currentUserName } from "../auth.js";
 
 export const mutationResolvers = {
   Mutation: {
@@ -164,6 +165,13 @@ export const mutationResolvers = {
       args: { sprint: string; taskNum: number; developer: string },
       ctx: Context
     ) => {
+      // Engineers can only claim tasks for themselves
+      if (!isAdmin(ctx) && args.developer !== currentUserName(ctx)) {
+        throw new GraphQLError("Engineers can only claim tasks for themselves", {
+          extensions: { code: "FORBIDDEN" },
+        });
+      }
+
       // Fetch the task
       const task = await queryOne(
         ctx.db,
@@ -291,6 +299,9 @@ export const mutationResolvers = {
       args: { sprint: string; taskNum: number; developer: string },
       ctx: Context
     ) => {
+      // Admin-only mutation
+      requireAdmin(ctx);
+
       // Fetch the task
       const task = await queryOne(
         ctx.db,

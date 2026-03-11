@@ -1,5 +1,6 @@
 import type { Context } from "../context.js";
 import { queryAll, whereClause } from "../db-adapter.js";
+import { requireAdmin } from "../auth.js";
 
 export const skillQueryResolvers = {
   skillUsage: async (
@@ -7,6 +8,7 @@ export const skillQueryResolvers = {
     args: { dateFrom?: string; dateTo?: string },
     ctx: Context
   ) => {
+    requireAdmin(ctx);
     const conditions: string[] = ["event_type = 'tool_call'"];
     const params: any[] = [];
     if (args.dateFrom) {
@@ -45,6 +47,7 @@ export const skillQueryResolvers = {
     args: { sprint?: string },
     ctx: Context
   ) => {
+    requireAdmin(ctx);
     const conditions: string[] = [];
     const params: any[] = [];
     if (args.sprint) {
@@ -72,6 +75,7 @@ export const skillQueryResolvers = {
     args: { skillName?: string },
     ctx: Context
   ) => {
+    requireAdmin(ctx);
     const conditions: string[] = [];
     const params: any[] = [];
     if (args.skillName) {
@@ -99,6 +103,7 @@ export const skillQueryResolvers = {
     args: { sprint?: string },
     ctx: Context
   ) => {
+    requireAdmin(ctx);
     const conditions: string[] = [];
     const params: any[] = [];
     if (args.sprint) {
@@ -125,6 +130,7 @@ export const skillQueryResolvers = {
     args: { skillName?: string },
     ctx: Context
   ) => {
+    requireAdmin(ctx);
     const conditions: string[] = [];
     const params: any[] = [];
     if (args.skillName) {
@@ -152,6 +158,7 @@ export const skillQueryResolvers = {
     args: { sprint?: string },
     ctx: Context
   ) => {
+    requireAdmin(ctx);
     const conditions: string[] = [];
     const params: any[] = [];
     if (args.sprint) {
@@ -179,6 +186,7 @@ export const skillQueryResolvers = {
     args: { skillName?: string },
     ctx: Context
   ) => {
+    requireAdmin(ctx);
     const conditions: string[] = [];
     const params: any[] = [];
     if (args.skillName) {

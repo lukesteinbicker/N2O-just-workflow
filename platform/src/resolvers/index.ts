@@ -2,6 +2,7 @@
 import type { Context } from "../context.js";
 import { queryAll } from "../db-adapter.js";
 import { mapEvent, mapTranscript, mapSprint, mapDeveloper, mapTask } from "./mappers.js";
+import { isAdmin, currentUserName, requireAdmin } from "../auth.js";
 import { taskResolvers } from "./task.js";
 import { sprintResolvers } from "./sprint.js";
 import { projectResolvers } from "./project.js";
@@ -138,7 +139,14 @@ const standaloneResolvers = {
       const params: any[] = [];
       const conditions: string[] = [];
 
-      if (args.developer) {
+      // Engineers: force developer = self
+      if (!isAdmin(ctx)) {
+        const name = currentUserName(ctx);
+        if (name) {
+          conditions.push("t.owner = ?");
+          params.push(name);
+        }
+      } else if (args.developer) {
         conditions.push("t.owner = ?");
         params.push(args.developer);
       }

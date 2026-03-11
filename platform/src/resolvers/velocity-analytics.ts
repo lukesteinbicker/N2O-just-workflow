@@ -1,5 +1,6 @@
 import type { Context } from "../context.js";
 import { queryAll, whereClause } from "../db-adapter.js";
+import { isAdmin, currentUserName, requireAdmin } from "../auth.js";
 
 export const velocityQueryResolvers = {
   developerLearningRate: async (
@@ -9,7 +10,11 @@ export const velocityQueryResolvers = {
   ) => {
     const conditions: string[] = [];
     const params: any[] = [];
-    if (args.owner) {
+    // Engineers: force owner = self
+    if (!isAdmin(ctx)) {
+      const name = currentUserName(ctx);
+      if (name) { conditions.push("owner = ?"); params.push(name); }
+    } else if (args.owner) {
       conditions.push("owner = ?");
       params.push(args.owner);
     }
@@ -32,6 +37,7 @@ export const velocityQueryResolvers = {
     args: { sprint?: string },
     ctx: Context
   ) => {
+    requireAdmin(ctx);
     const conditions: string[] = [];
     const params: any[] = [];
     if (args.sprint) {
@@ -55,6 +61,7 @@ export const velocityQueryResolvers = {
   },
 
   tokenEfficiencyTrend: async (_: any, __: any, ctx: Context) => {
+    requireAdmin(ctx);
     const rows = await queryAll(
       ctx.db,
       "SELECT * FROM token_efficiency_trend ORDER BY sprint, complexity"
@@ -72,6 +79,7 @@ export const velocityQueryResolvers = {
     args: { sprint?: string },
     ctx: Context
   ) => {
+    requireAdmin(ctx);
     const conditions: string[] = [];
     const params: any[] = [];
     if (args.sprint) {
@@ -111,7 +119,11 @@ export const velocityQueryResolvers = {
       "owner IS NOT NULL",
     ];
     const params: any[] = [];
-    if (args.owner) {
+    // Engineers: force owner = self
+    if (!isAdmin(ctx)) {
+      const name = currentUserName(ctx);
+      if (name) { conditions.push("owner = ?"); params.push(name); }
+    } else if (args.owner) {
       conditions.push("owner = ?");
       params.push(args.owner);
     }
@@ -155,6 +167,7 @@ export const velocityQueryResolvers = {
   },
 
   estimationAccuracyByType: async (_: any, __: any, ctx: Context) => {
+    requireAdmin(ctx);
     const rows = await queryAll(
       ctx.db,
       "SELECT * FROM estimation_accuracy_by_type ORDER BY blow_up_ratio DESC"
@@ -169,6 +182,7 @@ export const velocityQueryResolvers = {
   },
 
   estimationAccuracyByComplexity: async (_: any, __: any, ctx: Context) => {
+    requireAdmin(ctx);
     const rows = await queryAll(
       ctx.db,
       "SELECT * FROM estimation_accuracy_by_complexity ORDER BY blow_up_ratio DESC"
@@ -187,6 +201,7 @@ export const velocityQueryResolvers = {
     args: { sprint?: string; dateFrom?: string; dateTo?: string },
     ctx: Context
   ) => {
+    requireAdmin(ctx);
     const conditions: string[] = [
       "started_at IS NOT NULL",
       "completed_at IS NOT NULL",
