@@ -93,29 +93,32 @@ export const togglResolvers = {
         }
       }
 
-      // Merge with DB records for role/active overrides (keyed by name)
-      // Gracefully handle missing table (migration may not have run)
-      const roleMap = new Map<string, { role: string; active: boolean }>();
+      // Merge with developers table for role overrides (keyed by time_tracking_user_id)
+      const devMap = new Map<number, { name: string; fullName: string; role: string }>();
       try {
         const dbRows = await queryAll(
           ctx.db,
-          `SELECT toggl_name, role, active FROM toggl_members`
+          `SELECT name, full_name, role, time_tracking_user_id FROM developers WHERE time_tracking_user_id IS NOT NULL`
         );
         for (const r of dbRows as any[]) {
-          roleMap.set(r.toggl_name, { role: r.role, active: !!r.active });
+          devMap.set(r.time_tracking_user_id, {
+            name: r.name,
+            fullName: r.full_name,
+            role: r.role || "developer",
+          });
         }
       } catch {
-        // Table doesn't exist yet — use defaults
+        // Column doesn't exist yet — use defaults
       }
 
       const result = memberList.map((m) => {
-        const dbRecord = roleMap.get(m.name);
+        const dev = devMap.get(m.id);
         return {
           id: m.id,  // Toggl user_id — matches entry.userId
           togglName: m.name,
           email: m.email,
-          role: dbRecord?.role ?? "developer",
-          active: dbRecord?.active ?? true,
+          role: dev?.role ?? "developer",
+          active: true,
         };
       });
 
@@ -273,55 +276,41 @@ export const togglResolvers = {
       args: { id: number; role?: string; active?: boolean },
       ctx: Context
     ) => {
-      // args.id is the Toggl user_id (not the DB serial PK).
-      // We need to find the member name from the cached API data, then upsert in DB.
-      const token = getToken();
-      const wsId = await getWorkspaceId(token);
+      // args.id is the Toggl user_id. Find the matching developer by time_tracking_user_id.
+      const dev = await queryOne(
+        ctx.db,
+        `SELECT name, full_name, role FROM developers WHERE time_tracking_user_id = $1`,
+        [args.id]
+      ) as any;
 
-      // Resolve Toggl user_id → name by checking cached members or API
-      let memberName: string | null = null;
-      const cached = cacheGet("toggl:members", ONE_HOUR) as any[] | null;
-      if (cached) {
-        const found = cached.find((m: any) => m.id === args.id);
-        if (found) memberName = found.togglName;
-      }
-      if (!memberName) {
-        // Fallback: fetch from API
-        try {
-          const wsMembers = await fetchToggl(
-            `${TOGGL_API_BASE}/workspaces/${wsId}/members`,
-            token
-          );
-          const found = (wsMembers || []).find((m: any) => m.user_id === args.id);
-          if (found) memberName = found.name || found.email?.split("@")[0] || `User ${args.id}`;
-        } catch {
-          // ignore
-        }
-      }
-      if (!memberName) throw new Error("Member not found");
+      if (!dev) throw new Error(`No developer linked to time tracking user ID ${args.id}`);
 
-      const role = args.role ?? "developer";
-      const active = args.active ?? true;
+      const role = args.role ?? dev.role ?? "developer";
 
-      // Upsert by toggl_name (which has a UNIQUE constraint)
+      // Update the developer's role in the developers table
       await queryAll(
         ctx.db,
-        `INSERT INTO toggl_members (toggl_name, role, active)
-         VALUES ($1, $2, $3)
-         ON CONFLICT (toggl_name)
-         DO UPDATE SET role = EXCLUDED.role, active = EXCLUDED.active`,
-        [memberName, role, active]
+        `UPDATE developers SET role = $1, updated_at = NOW() WHERE time_tracking_user_id = $2`,
+        [role, args.id]
       );
 
       // Invalidate members cache so next fetch picks up the change
       cacheSet("toggl:members", null);
 
+      // Resolve name from cached members for the togglName field
+      let togglName = dev.full_name;
+      const cached = cacheGet("toggl:members", ONE_HOUR) as any[] | null;
+      if (cached) {
+        const found = cached.find((m: any) => m.id === args.id);
+        if (found) togglName = found.togglName;
+      }
+
       return {
-        id: args.id,  // Return the Toggl user_id
-        togglName: memberName,
+        id: args.id,
+        togglName,
         email: null,
         role,
-        active,
+        active: args.active ?? true,
       };
     },
   },
