@@ -68,7 +68,7 @@ export function useTimeTrackingData(startDate: string, endDate: string) {
   const { data: wsData, loading: wsLoading } = useQuery(TIME_TRACKING_WORKSPACE_QUERY);
 
   const { data: membersData, loading: membersLoading, refetch: refetchMembers } =
-    useQuery(TIME_TRACKING_MEMBERS_QUERY);
+    useQuery(TIME_TRACKING_MEMBERS_QUERY, { errorPolicy: "all" });
 
   const { data: entriesData, loading: entriesLoading } = useQuery(
     TIME_TRACKING_ENTRIES_QUERY,

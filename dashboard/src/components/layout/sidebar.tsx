@@ -8,6 +8,7 @@ import {
   Network,
   Radio,
   BarChart3,
+  Clock,
   Sparkles,
   PanelLeftOpen,
   PanelLeftClose,
@@ -17,13 +18,17 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { useCurrentUser } from "@/lib/use-current-user";
 
-export const navItems = [
-  { href: "/tasks", icon: ListTodo, label: "Tasks" },
-  { href: "/streams", icon: Radio, label: "Streams" },
-  { href: "/ontology", icon: Network, label: "Ontology" },
-  { href: "/capacity", icon: BarChart3, label: "Capacity" },
+const allNavItems = [
+  { href: "/tasks", icon: ListTodo, label: "Tasks", adminOnly: false },
+  { href: "/streams", icon: Radio, label: "Streams", adminOnly: false },
+  { href: "/ontology", icon: Network, label: "Ontology", adminOnly: true },
+  { href: "/capacity", icon: BarChart3, label: "Capacity", adminOnly: true },
+  { href: "/time-tracking", icon: Clock, label: "Time", adminOnly: false },
 ] as const;
+
+export const navItems = allNavItems;
 
 export function Sidebar({
   onAskToggle,
@@ -37,6 +42,11 @@ export function Sidebar({
   onToggleExpanded: () => void;
 }) {
   const pathname = usePathname();
+  const { isAdmin } = useCurrentUser();
+
+  const visibleNavItems = allNavItems.filter(
+    (item) => !item.adminOnly || isAdmin
+  );
 
   return (
     <aside
@@ -56,7 +66,7 @@ export function Sidebar({
 
       {/* Nav items */}
       <div className={`flex flex-col gap-0.5 ${expanded ? "px-2" : "items-center"}`}>
-        {navItems.map(({ href, icon: Icon, label }) => {
+        {visibleNavItems.map(({ href, icon: Icon, label }) => {
           const active = pathname.startsWith(href);
           const baseClasses = `flex items-center rounded-md transition-colors ${
             active

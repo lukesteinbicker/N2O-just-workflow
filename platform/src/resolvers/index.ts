@@ -55,6 +55,15 @@ const resolveTask = async (parent: any, _: any, ctx: Context) => {
 // Standalone query resolvers for events, transcripts, activity
 const standaloneResolvers = {
   Query: {
+    me: (_: any, __: any, ctx: Context) => {
+      if (!ctx.currentUser) return null;
+      return {
+        name: ctx.currentUser.name,
+        email: ctx.currentUser.email,
+        accessRole: ctx.currentUser.accessRole,
+      };
+    },
+
     events: async (
       _: any,
       args: {

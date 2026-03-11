@@ -1,5 +1,14 @@
 export const coreTypeDefs = `#graphql
+  type CurrentUser {
+    name: String!
+    email: String!
+    accessRole: String!
+  }
+
   type Query {
+    """Current authenticated user info (name, email, role)"""
+    me: CurrentUser
+
     """Fetch a single task by sprint name and task number"""
     task(sprint: String!, taskNum: Int!): Task
 

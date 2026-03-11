@@ -228,18 +228,20 @@ export function FilterBar({
       <div className="w-px h-5 bg-[#2a2f3a]" />
 
       {/* Entity filters */}
-      <FilterDropdown
-        label="Member"
-        items={members.map((m) => ({ id: m.id, name: m.name }))}
-        selectedIds={filters.memberIds}
-        onToggle={(id) => {
-          const ids = filters.memberIds.includes(id as number)
-            ? filters.memberIds.filter((i) => i !== id)
-            : [...filters.memberIds, id as number];
-          onFiltersChange({ ...filters, memberIds: ids });
-        }}
-        colorMap={memberColors}
-      />
+      {members.length > 0 && (
+        <FilterDropdown
+          label="Member"
+          items={members.map((m) => ({ id: m.id, name: m.name }))}
+          selectedIds={filters.memberIds}
+          onToggle={(id) => {
+            const ids = filters.memberIds.includes(id as number)
+              ? filters.memberIds.filter((i) => i !== id)
+              : [...filters.memberIds, id as number];
+            onFiltersChange({ ...filters, memberIds: ids });
+          }}
+          colorMap={memberColors}
+        />
+      )}
       <FilterDropdown
         label="Project"
         items={projects.map((p) => ({ id: p.id, name: p.name }))}
