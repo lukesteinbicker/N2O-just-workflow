@@ -12,8 +12,8 @@ import {
 import type {
   TimeEntry,
   TimeTrackingMember,
-  TogglProject,
-  TogglTag,
+  TimeTrackingProject,
+  TimeTrackingTag,
 } from "../use-time-tracking-data";
 
 // ---------- CalendarDayColumn ----------
@@ -97,10 +97,10 @@ function CalendarDayColumn({
                   }
                 : {}),
             }}
-            title={`${entry.member?.togglName}: ${entry.description}\n${formatTimeShort(entry.start)}${entry.isRunning ? " - running" : ` - ${formatHours(entry.seconds)}h`}`}
+            title={`${entry.member?.name}: ${entry.description}\n${formatTimeShort(entry.start)}${entry.isRunning ? " - running" : ` - ${formatHours(entry.seconds)}h`}`}
           >
             <div className="text-[9px] font-medium text-[#e0e0e0] truncate">
-              {entry.member?.togglName?.split(" ")[0]}
+              {entry.member?.name?.split(" ")[0]}
             </div>
             <div className="text-[8px] text-[#8a8f9a] truncate">
               {entry.description || "No description"}
@@ -135,8 +135,8 @@ interface WeekCalendarViewProps {
   members: TimeTrackingMember[];
   memberColors: Record<number, string>;
   dateRange: { start: Date; end: Date };
-  projects: TogglProject[];
-  tags: TogglTag[];
+  projects: TimeTrackingProject[];
+  tags: TimeTrackingTag[];
 }
 
 export function WeekCalendarView({

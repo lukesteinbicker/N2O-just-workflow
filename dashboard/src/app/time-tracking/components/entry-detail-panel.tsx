@@ -3,13 +3,13 @@
 import { useEffect } from "react";
 import { formatTimeShort, formatDuration } from "./utils";
 import type { LayoutEntry } from "./utils";
-import type { TogglProject, TogglTag } from "../use-time-tracking-data";
+import type { TimeTrackingProject, TimeTrackingTag } from "../use-time-tracking-data";
 
 interface EntryDetailPanelProps {
   entry: LayoutEntry;
   onClose: () => void;
-  projects: TogglProject[];
-  tags: TogglTag[];
+  projects: TimeTrackingProject[];
+  tags: TimeTrackingTag[];
 }
 
 export function EntryDetailPanel({ entry, onClose, projects, tags }: EntryDetailPanelProps) {
@@ -39,7 +39,7 @@ export function EntryDetailPanel({ entry, onClose, projects, tags }: EntryDetail
                 {entry.description || "No description"}
               </div>
               <div className="text-[13px] text-[#8a8f9a] mt-1">
-                {entry.member?.togglName || "Unknown"}
+                {entry.member?.name || "Unknown"}
               </div>
             </div>
           </div>

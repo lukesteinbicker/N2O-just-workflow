@@ -1,5 +1,5 @@
-// Toggl GraphQL resolvers — live API calls with rate limiting and caching.
-// Replaces the stale pre-synced resolver with direct Toggl API access.
+// Time tracking GraphQL resolvers — live API calls with rate limiting and caching.
+// Provider: Toggl Track (abstracted behind generic timeTracking* query names).
 import type { Context } from "../context.js";
 import { queryAll, queryOne } from "../db-adapter.js";
 import {
@@ -26,9 +26,9 @@ async function getWorkspaceId(token: string): Promise<number> {
   return id;
 }
 
-export const togglResolvers = {
+export const timeTrackingResolvers = {
   Query: {
-    togglMe: async () => {
+    timeTrackingMe: async () => {
       const token = getToken();
       const cacheKey = "toggl:me";
       const cached = cacheGet(cacheKey, ONE_HOUR);
@@ -40,7 +40,7 @@ export const togglResolvers = {
       return result;
     },
 
-    togglWorkspace: async () => {
+    timeTrackingWorkspace: async () => {
       const token = getToken();
       const cacheKey = "toggl:workspace";
       const cached = cacheGet(cacheKey, ONE_HOUR);
@@ -55,7 +55,7 @@ export const togglResolvers = {
       return result;
     },
 
-    togglMembers: async (_: any, __: any, ctx: Context) => {
+    timeTrackingMembers: async (_: any, __: any, ctx: Context) => {
       const token = getToken();
       const wsId = await getWorkspaceId(token);
       const cacheKey = "toggl:members";
@@ -114,8 +114,8 @@ export const togglResolvers = {
       const result = memberList.map((m) => {
         const dev = devMap.get(m.id);
         return {
-          id: m.id,  // Toggl user_id — matches entry.userId
-          togglName: m.name,
+          id: m.id,
+          name: m.name,
           email: m.email,
           role: dev?.role ?? "developer",
           active: true,
@@ -126,7 +126,7 @@ export const togglResolvers = {
       return result;
     },
 
-    togglTimeEntries: async (_: any, args: { startDate: string; endDate: string }) => {
+    timeTrackingEntries: async (_: any, args: { startDate: string; endDate: string }) => {
       const token = getToken();
       const wsId = await getWorkspaceId(token);
       const cacheKey = `toggl:entries:${args.startDate}:${args.endDate}`;
@@ -170,7 +170,7 @@ export const togglResolvers = {
       return entries;
     },
 
-    togglProjects: async () => {
+    timeTrackingProjects: async () => {
       const token = getToken();
       const wsId = await getWorkspaceId(token);
       const cacheKey = "toggl:projects";
@@ -192,7 +192,7 @@ export const togglResolvers = {
       return result;
     },
 
-    togglClients: async () => {
+    timeTrackingClients: async () => {
       const token = getToken();
       const wsId = await getWorkspaceId(token);
       const cacheKey = "toggl:clients";
@@ -211,7 +211,7 @@ export const togglResolvers = {
       return result;
     },
 
-    togglTags: async () => {
+    timeTrackingTags: async () => {
       const token = getToken();
       const wsId = await getWorkspaceId(token);
       const cacheKey = "toggl:tags";
@@ -230,7 +230,7 @@ export const togglResolvers = {
       return result;
     },
 
-    togglCurrentTimer: async () => {
+    timeTrackingCurrentTimer: async () => {
       const token = getToken();
       // No cache — always fetch fresh for current timer
       const entry = await fetchToggl(
@@ -246,7 +246,7 @@ export const togglResolvers = {
       };
     },
 
-    togglDashboardActivity: async () => {
+    timeTrackingDashboardActivity: async () => {
       const token = getToken();
       const wsId = await getWorkspaceId(token);
       const cacheKey = "toggl:dashboard_activity";
@@ -271,12 +271,12 @@ export const togglResolvers = {
   },
 
   Mutation: {
-    updateTogglMember: async (
+    updateTimeTrackingMember: async (
       _: any,
       args: { id: number; role?: string; active?: boolean },
       ctx: Context
     ) => {
-      // args.id is the Toggl user_id. Find the matching developer by time_tracking_user_id.
+      // args.id is the time tracking user_id. Find the matching developer by time_tracking_user_id.
       const dev = await queryOne(
         ctx.db,
         `SELECT name, full_name, role FROM developers WHERE time_tracking_user_id = $1`,
@@ -297,17 +297,17 @@ export const togglResolvers = {
       // Invalidate members cache so next fetch picks up the change
       cacheSet("toggl:members", null);
 
-      // Resolve name from cached members for the togglName field
-      let togglName = dev.full_name;
+      // Resolve name from cached members
+      let memberName = dev.full_name;
       const cached = cacheGet("toggl:members", ONE_HOUR) as any[] | null;
       if (cached) {
         const found = cached.find((m: any) => m.id === args.id);
-        if (found) togglName = found.togglName;
+        if (found) memberName = found.name;
       }
 
       return {
         id: args.id,
-        togglName,
+        name: memberName,
         email: null,
         role,
         active: args.active ?? true,

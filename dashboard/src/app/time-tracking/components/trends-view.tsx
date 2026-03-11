@@ -64,7 +64,7 @@ function TrendTable({
       if (sortKey === "name") {
         return (
           dir *
-          (a.togglName || "").localeCompare(b.togglName || "")
+          (a.name || "").localeCompare(b.name || "")
         );
       }
       return dir * ((memberTotals[a.id] || 0) - (memberTotals[b.id] || 0));
@@ -97,7 +97,7 @@ function TrendTable({
             className="h-10 flex items-center px-3 border-b border-[#1e2330]"
           >
             <span className="text-xs font-medium" style={{ color: memberColors[m.id] }}>
-              {m.togglName?.split(" ")[0] || "?"}
+              {m.name?.split(" ")[0] || "?"}
             </span>
           </div>
         ))}
@@ -256,7 +256,7 @@ function LineGraph({
               return `${xScale(i)},${yScale(val)}`;
             })
             .join(" ");
-          const firstName = (m.togglName || "?").split(" ")[0];
+          const firstName = (m.name || "?").split(" ")[0];
           return (
             <g key={m.id}>
               <polyline
@@ -529,7 +529,7 @@ export function TrendsView({
                 style={{ background: memberColors[m.id] }}
               />
               <span className="text-[10px] text-[#8a8f9a]">
-                {m.togglName?.split(" ")[0]}
+                {m.name?.split(" ")[0]}
               </span>
             </div>
           ))}

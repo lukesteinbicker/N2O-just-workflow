@@ -305,68 +305,68 @@ export const CONVERSATION_FEED_QUERY = gql`
   }
 `;
 
-// ── Toggl Time Tracking (live API) ───────────────────────
+// ── Time Tracking (live API) ────────────────────────────
 
-export const TOGGL_ME_QUERY = gql`
-  query TogglMe {
-    togglMe { id fullname email }
+export const TIME_TRACKING_ME_QUERY = gql`
+  query TimeTrackingMe {
+    timeTrackingMe { id fullname email }
   }
 `;
 
-export const TOGGL_WORKSPACE_QUERY = gql`
-  query TogglWorkspace {
-    togglWorkspace { id name }
+export const TIME_TRACKING_WORKSPACE_QUERY = gql`
+  query TimeTrackingWorkspace {
+    timeTrackingWorkspace { id name }
   }
 `;
 
-export const TOGGL_MEMBERS_QUERY = gql`
-  query TogglMembers {
-    togglMembers { id togglName email role active }
+export const TIME_TRACKING_MEMBERS_QUERY = gql`
+  query TimeTrackingMembers {
+    timeTrackingMembers { id name email role active }
   }
 `;
 
-export const TOGGL_TIME_ENTRIES_QUERY = gql`
-  query TogglTimeEntries($startDate: String!, $endDate: String!) {
-    togglTimeEntries(startDate: $startDate, endDate: $endDate) {
+export const TIME_TRACKING_ENTRIES_QUERY = gql`
+  query TimeTrackingEntries($startDate: String!, $endDate: String!) {
+    timeTrackingEntries(startDate: $startDate, endDate: $endDate) {
       id description start stop seconds projectId tagIds userId
     }
   }
 `;
 
-export const TOGGL_PROJECTS_QUERY = gql`
-  query TogglProjects {
-    togglProjects { id name clientId color active }
+export const TIME_TRACKING_PROJECTS_QUERY = gql`
+  query TimeTrackingProjects {
+    timeTrackingProjects { id name clientId color active }
   }
 `;
 
-export const TOGGL_CLIENTS_QUERY = gql`
-  query TogglClients {
-    togglClients { id name }
+export const TIME_TRACKING_CLIENTS_QUERY = gql`
+  query TimeTrackingClients {
+    timeTrackingClients { id name }
   }
 `;
 
-export const TOGGL_TAGS_QUERY = gql`
-  query TogglTags {
-    togglTags { id name }
+export const TIME_TRACKING_TAGS_QUERY = gql`
+  query TimeTrackingTags {
+    timeTrackingTags { id name }
   }
 `;
 
-export const TOGGL_CURRENT_TIMER_QUERY = gql`
-  query TogglCurrentTimer {
-    togglCurrentTimer { description start duration projectId }
+export const TIME_TRACKING_CURRENT_TIMER_QUERY = gql`
+  query TimeTrackingCurrentTimer {
+    timeTrackingCurrentTimer { description start duration projectId }
   }
 `;
 
-export const TOGGL_DASHBOARD_ACTIVITY_QUERY = gql`
-  query TogglDashboardActivity {
-    togglDashboardActivity { userId description duration projectId start stop }
+export const TIME_TRACKING_DASHBOARD_ACTIVITY_QUERY = gql`
+  query TimeTrackingDashboardActivity {
+    timeTrackingDashboardActivity { userId description duration projectId start stop }
   }
 `;
 
-export const UPDATE_TOGGL_MEMBER_MUTATION = gql`
-  mutation UpdateTogglMember($id: Int!, $role: String, $active: Boolean) {
-    updateTogglMember(id: $id, role: $role, active: $active) {
-      id togglName email role active
+export const UPDATE_TIME_TRACKING_MEMBER_MUTATION = gql`
+  mutation UpdateTimeTrackingMember($id: Int!, $role: String, $active: Boolean) {
+    updateTimeTrackingMember(id: $id, role: $role, active: $active) {
+      id name email role active
     }
   }
 `;
@@ -386,4 +386,3 @@ export const DATA_HEALTH_QUERY = gql`
     }
   }
 `;
-

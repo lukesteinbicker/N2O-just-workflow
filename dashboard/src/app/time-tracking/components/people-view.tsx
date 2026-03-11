@@ -11,15 +11,15 @@ import {
   getMemberColor,
   ROLE_TARGETS,
 } from "./utils";
-import type { TimeTrackingMember, TimeEntry, DashboardActivity, TogglProject } from "../use-time-tracking-data";
+import type { TimeTrackingMember, TimeEntry, DashboardActivity, TimeTrackingProject } from "../use-time-tracking-data";
 
 interface PeopleViewProps {
   entries: TimeEntry[];
   members: TimeTrackingMember[];
   currentEntries: Record<number, DashboardActivity>;
   dateRange: { start: Date; end: Date };
-  projects: TogglProject[];
-  projectMap: Map<number, TogglProject>;
+  projects: TimeTrackingProject[];
+  projectMap: Map<number, TimeTrackingProject>;
   onRoleChange: (memberId: number, role: string) => void;
 }
 
@@ -65,15 +65,15 @@ export function PeopleView({
   const [sortKey, setSortKey] = useState<string>("name");
   const [sortAsc, setSortAsc] = useState(true);
 
-  // Build member index by looking at workspace member IDs that appear in entries
-  const memberUserMap = useMemo(() => {
-    // Map togglName to userId by looking at entries
-    const nameToId = new Map<string, number>();
-    const idToName = new Map<number, string>();
-    // For now, we approximate by treating member index as user ID mapping
-    // The real mapping happens via the dashboard activity data
-    return { nameToId, idToName };
-  }, []);
+  // Build entries index by userId for fast lookup
+  const entriesByUser = useMemo(() => {
+    const map: Record<number, TimeEntry[]> = {};
+    for (const e of entries) {
+      if (!map[e.userId]) map[e.userId] = [];
+      map[e.userId].push(e);
+    }
+    return map;
+  }, [entries]);
 
   // Compute hours per member per week
   const weeks = useMemo(
@@ -101,23 +101,18 @@ export function PeopleView({
         const color = getMemberColor(idx);
         const target = ROLE_TARGETS[member.role] ?? 35;
 
-        // Filter entries for this member
-        // Since we don't have a direct userId mapping yet, we match by entry userId
-        // In the full port, this would use workspace members API
-        const memberEntries = entries.filter((e) => {
-          // Match entries — this is a simplified approach
-          return true; // Will be refined when we have userId mapping
-        });
+        // Filter entries for this member by userId
+        const memberEntries = entriesByUser[member.id] || [];
 
         // Today's hours
-        const todayEntries = entries.filter(
+        const todayEntries = memberEntries.filter(
           (e) => e.start && e.start.startsWith(today)
         );
         const todayHours = todayEntries.reduce((sum, e) => sum + (e.seconds || 0), 0) / 3600;
 
         // Current week hours
         const cwStart = currentWeekStart.toISOString();
-        const cwEntries = entries.filter(
+        const cwEntries = memberEntries.filter(
           (e) => e.start && e.start >= cwStart
         );
         const currentWeekHours = cwEntries.reduce((sum, e) => sum + (e.seconds || 0), 0) / 3600;
@@ -125,7 +120,7 @@ export function PeopleView({
         // Last week hours
         const lwStart = lastWeekStart.toISOString();
         const lwEnd = lastWeekEnd.toISOString();
-        const lwEntries = entries.filter(
+        const lwEntries = memberEntries.filter(
           (e) => e.start && e.start >= lwStart && e.start <= lwEnd
         );
         const lastWeekHours = lwEntries.reduce((sum, e) => sum + (e.seconds || 0), 0) / 3600;
@@ -134,7 +129,7 @@ export function PeopleView({
         const weeklyTrend = weeks.slice(-5).map((w) => {
           const wStart = w.start.toISOString();
           const wEnd = w.end.toISOString();
-          const wEntries = entries.filter(
+          const wEntries = memberEntries.filter(
             (e) => e.start && e.start >= wStart && e.start <= wEnd
           );
           return wEntries.reduce((sum, e) => sum + (e.seconds || 0), 0) / 3600;
@@ -154,8 +149,8 @@ export function PeopleView({
         const onTarget = completedWeeks.filter((h) => h >= target * 0.9).length;
         const onTargetRate = completedWeeks.length > 0 ? (onTarget / completedWeeks.length) * 100 : 0;
 
-        // Last activity
-        const lastEntry = entries
+        // Last activity for this member
+        const lastEntry = memberEntries
           .filter((e) => e.stop)
           .sort((a, b) => (b.stop || "").localeCompare(a.stop || ""))
           [0];
@@ -175,7 +170,7 @@ export function PeopleView({
           lastActivity,
         };
       });
-  }, [members, entries, weeks, today]);
+  }, [members, entriesByUser, weeks, today]);
 
   // Sort
   const sorted = useMemo(() => {
@@ -183,7 +178,7 @@ export function PeopleView({
     copy.sort((a, b) => {
       let cmp = 0;
       switch (sortKey) {
-        case "name": cmp = a.member.togglName.localeCompare(b.member.togglName); break;
+        case "name": cmp = a.member.name.localeCompare(b.member.name); break;
         case "role": cmp = a.member.role.localeCompare(b.member.role); break;
         case "today": cmp = a.todayHours - b.todayHours; break;
         case "week": cmp = a.currentWeekHours - b.currentWeekHours; break;
@@ -218,11 +213,11 @@ export function PeopleView({
         {members
           .filter((m) => m.active)
           .map((m, i) => {
-            const activity = currentEntries[i]; // Simplified mapping
+            const activity = currentEntries[m.id];
             return (
               <LiveCard
                 key={m.id}
-                member={{ name: m.togglName }}
+                member={{ name: m.name }}
                 timeEntry={
                   activity
                     ? {
@@ -282,7 +277,7 @@ export function PeopleView({
                   style={{ borderLeft: `3px solid ${paceColor}` }}
                 >
                   <td className="px-3 py-2 font-medium" style={{ color: row.color }}>
-                    {row.member.togglName}
+                    {row.member.name}
                   </td>
                   <td className="px-3 py-2">
                     <span
@@ -337,7 +332,7 @@ export function PeopleView({
           <div className="rounded border border-[#2a2f3a] bg-[#1a1d24] p-4 space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium" style={{ color: row.color }}>
-                {row.member.togglName}
+                {row.member.name}
               </span>
               <div className="flex gap-1">
                 {roles.map((r) => (

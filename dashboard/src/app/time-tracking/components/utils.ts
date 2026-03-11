@@ -134,7 +134,7 @@ export interface LayoutEntry {
   column: number;
   totalColumns: number;
   color: string;
-  member: { id: number; togglName: string } | undefined;
+  member: { id: number; name: string } | undefined;
   description: string;
   start: string;
   stop: string | null;
@@ -146,7 +146,7 @@ export interface LayoutEntry {
 
 export function layoutOverlappingEntries(
   dayEntries: Record<number, { description: string; start: string; stop: string | null; seconds: number; projectId: number | null; tagIds: number[] }[]>,
-  members: { id: number; togglName: string }[],
+  members: { id: number; name: string }[],
   memberColors: Record<number, string>,
 ): LayoutEntry[] {
   const allEntries: LayoutEntry[] = [];

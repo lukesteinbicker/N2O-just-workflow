@@ -3,23 +3,23 @@
 import { useQuery, useMutation } from "@apollo/client/react";
 import { useMemo } from "react";
 import {
-  TOGGL_ME_QUERY,
-  TOGGL_WORKSPACE_QUERY,
-  TOGGL_MEMBERS_QUERY,
-  TOGGL_TIME_ENTRIES_QUERY,
-  TOGGL_PROJECTS_QUERY,
-  TOGGL_CLIENTS_QUERY,
-  TOGGL_TAGS_QUERY,
-  TOGGL_CURRENT_TIMER_QUERY,
-  TOGGL_DASHBOARD_ACTIVITY_QUERY,
-  UPDATE_TOGGL_MEMBER_MUTATION,
+  TIME_TRACKING_ME_QUERY,
+  TIME_TRACKING_WORKSPACE_QUERY,
+  TIME_TRACKING_MEMBERS_QUERY,
+  TIME_TRACKING_ENTRIES_QUERY,
+  TIME_TRACKING_PROJECTS_QUERY,
+  TIME_TRACKING_CLIENTS_QUERY,
+  TIME_TRACKING_TAGS_QUERY,
+  TIME_TRACKING_CURRENT_TIMER_QUERY,
+  TIME_TRACKING_DASHBOARD_ACTIVITY_QUERY,
+  UPDATE_TIME_TRACKING_MEMBER_MUTATION,
 } from "@/lib/graphql/queries";
 
 const FIVE_MIN = 5 * 60 * 1000;
 
 export interface TimeTrackingMember {
   id: number;
-  togglName: string;
+  name: string;
   email: string | null;
   role: string;
   active: boolean;
@@ -36,7 +36,7 @@ export interface TimeEntry {
   userId: number;
 }
 
-export interface TogglProject {
+export interface TimeTrackingProject {
   id: number;
   name: string;
   clientId: number | null;
@@ -44,12 +44,12 @@ export interface TogglProject {
   active: boolean;
 }
 
-export interface TogglClient {
+export interface TimeTrackingClient {
   id: number;
   name: string;
 }
 
-export interface TogglTag {
+export interface TimeTrackingTag {
   id: number;
   name: string;
 }
@@ -64,41 +64,41 @@ export interface DashboardActivity {
 }
 
 export function useTimeTrackingData(startDate: string, endDate: string) {
-  const { data: meData, loading: meLoading } = useQuery(TOGGL_ME_QUERY);
-  const { data: wsData, loading: wsLoading } = useQuery(TOGGL_WORKSPACE_QUERY);
+  const { data: meData, loading: meLoading } = useQuery(TIME_TRACKING_ME_QUERY);
+  const { data: wsData, loading: wsLoading } = useQuery(TIME_TRACKING_WORKSPACE_QUERY);
 
   const { data: membersData, loading: membersLoading, refetch: refetchMembers } =
-    useQuery(TOGGL_MEMBERS_QUERY);
+    useQuery(TIME_TRACKING_MEMBERS_QUERY);
 
   const { data: entriesData, loading: entriesLoading } = useQuery(
-    TOGGL_TIME_ENTRIES_QUERY,
+    TIME_TRACKING_ENTRIES_QUERY,
     { variables: { startDate, endDate }, pollInterval: FIVE_MIN }
   );
 
   const { data: activityData, loading: activityLoading } = useQuery(
-    TOGGL_DASHBOARD_ACTIVITY_QUERY,
+    TIME_TRACKING_DASHBOARD_ACTIVITY_QUERY,
     { pollInterval: FIVE_MIN }
   );
 
-  const { data: projectsData, loading: projectsLoading } = useQuery(TOGGL_PROJECTS_QUERY);
-  const { data: clientsData, loading: clientsLoading } = useQuery(TOGGL_CLIENTS_QUERY);
-  const { data: tagsData, loading: tagsLoading } = useQuery(TOGGL_TAGS_QUERY);
+  const { data: projectsData, loading: projectsLoading } = useQuery(TIME_TRACKING_PROJECTS_QUERY);
+  const { data: clientsData, loading: clientsLoading } = useQuery(TIME_TRACKING_CLIENTS_QUERY);
+  const { data: tagsData, loading: tagsLoading } = useQuery(TIME_TRACKING_TAGS_QUERY);
 
-  const { data: timerData } = useQuery(TOGGL_CURRENT_TIMER_QUERY, {
+  const { data: timerData } = useQuery(TIME_TRACKING_CURRENT_TIMER_QUERY, {
     pollInterval: FIVE_MIN,
   });
 
-  const [updateMember] = useMutation(UPDATE_TOGGL_MEMBER_MUTATION);
+  const [updateMember] = useMutation(UPDATE_TIME_TRACKING_MEMBER_MUTATION);
 
-  const me = meData?.togglMe ?? null;
-  const workspace = wsData?.togglWorkspace ?? null;
-  const members: TimeTrackingMember[] = membersData?.togglMembers ?? [];
-  const entries: TimeEntry[] = entriesData?.togglTimeEntries ?? [];
-  const dashboardActivity: DashboardActivity[] = activityData?.togglDashboardActivity ?? [];
-  const projects: TogglProject[] = projectsData?.togglProjects ?? [];
-  const clients: TogglClient[] = clientsData?.togglClients ?? [];
-  const tags: TogglTag[] = tagsData?.togglTags ?? [];
-  const currentTimer = timerData?.togglCurrentTimer ?? null;
+  const me = meData?.timeTrackingMe ?? null;
+  const workspace = wsData?.timeTrackingWorkspace ?? null;
+  const members: TimeTrackingMember[] = membersData?.timeTrackingMembers ?? [];
+  const entries: TimeEntry[] = entriesData?.timeTrackingEntries ?? [];
+  const dashboardActivity: DashboardActivity[] = activityData?.timeTrackingDashboardActivity ?? [];
+  const projects: TimeTrackingProject[] = projectsData?.timeTrackingProjects ?? [];
+  const clients: TimeTrackingClient[] = clientsData?.timeTrackingClients ?? [];
+  const tags: TimeTrackingTag[] = tagsData?.timeTrackingTags ?? [];
+  const currentTimer = timerData?.timeTrackingCurrentTimer ?? null;
 
   // Build lookup maps for fast access
   const projectMap = useMemo(

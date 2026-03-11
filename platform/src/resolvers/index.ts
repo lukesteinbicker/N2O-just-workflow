@@ -10,7 +10,7 @@ import { mutationResolvers } from "./mutations.js";
 import { analyticsResolvers } from "./analytics.js";
 import { conversationResolvers } from "./conversation.js";
 import { healthResolvers } from "./health.js";
-import { togglResolvers } from "./toggl.js";
+import { timeTrackingResolvers } from "./time-tracking.js";
 
 // ── Type resolver factories for typed object references ────────────────
 
@@ -232,11 +232,11 @@ export const resolvers = {
     ...analyticsResolvers.Query,
     ...conversationResolvers.Query,
     ...healthResolvers.Query,
-    ...togglResolvers.Query,
+    ...timeTrackingResolvers.Query,
   },
   Mutation: {
     ...mutationResolvers.Mutation,
-    ...togglResolvers.Mutation,
+    ...timeTrackingResolvers.Mutation,
   },
   Task: taskResolvers.Task,
   Sprint: sprintResolvers.Sprint,

@@ -171,7 +171,7 @@ export function FilterBar({
   tags,
   navControls,
 }: {
-  members: { id: number; togglName: string }[];
+  members: { id: number; name: string }[];
   memberColors: Record<number, string>;
   filters: Filters;
   onFiltersChange: (f: Filters) => void;
@@ -230,7 +230,7 @@ export function FilterBar({
       {/* Entity filters */}
       <FilterDropdown
         label="Member"
-        items={members.map((m) => ({ id: m.id, name: m.togglName }))}
+        items={members.map((m) => ({ id: m.id, name: m.name }))}
         selectedIds={filters.memberIds}
         onToggle={(id) => {
           const ids = filters.memberIds.includes(id as number)
