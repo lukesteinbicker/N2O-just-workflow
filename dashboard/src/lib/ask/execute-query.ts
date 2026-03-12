@@ -1,5 +1,5 @@
 /**
- * Executes GraphQL queries against the N2O data platform API.
+ * Executes GraphQL queries against the NOS data platform API.
  * Read-only: rejects mutations.
  */
 

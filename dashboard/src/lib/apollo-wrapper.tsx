@@ -5,7 +5,9 @@ import { setContext } from "@apollo/client/link/context";
 import { ApolloProvider } from "@apollo/client/react";
 import { supabase } from "./supabase";
 
-const httpLink = new HttpLink({ uri: "http://localhost:4000/graphql" });
+const httpLink = new HttpLink({
+  uri: process.env.NEXT_PUBLIC_GRAPHQL_URL || "http://localhost:4000/graphql",
+});
 
 const authLink = setContext(async (_, { headers }) => {
   if (!supabase) return { headers };
@@ -21,6 +23,8 @@ const authLink = setContext(async (_, { headers }) => {
     headers: {
       ...headers,
       authorization: `Bearer ${session.access_token}`,
+      "x-page-route":
+        typeof window !== "undefined" ? window.location.pathname : "ssr",
     },
   };
 });

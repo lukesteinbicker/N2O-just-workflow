@@ -156,8 +156,8 @@ export const DATA: CapacityData = {
       ],
     },
     {
-      id: "n2o-internal",
-      name: "N2O Internal",
+      id: "nos-internal",
+      name: "NOS Internal",
       projects: [
         { id: "onb", name: "Onboarding Platform", seats: 1, start: "2026-02-15", end: "2026-03-15", prob: 100, tier: "internal", notes: "Wrap in ~1 week; then off the board." },
         { id: "wf", name: "Workflow / Delivery", seats: 1, start: "2026-02-15", end: "2026-12-31", prob: 100, tier: "internal", notes: "Dedicated 1 seat always." },

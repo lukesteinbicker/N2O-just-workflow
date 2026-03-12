@@ -1,8 +1,8 @@
 /**
  * GraphQL schema adapter for the Ontology explorer.
  *
- * Wraps the existing N2O GraphQL introspection logic behind the SchemaAdapter
- * interface. All N2O-specific type-to-category mappings and entity queries
+ * Wraps the existing NOS GraphQL introspection logic behind the SchemaAdapter
+ * interface. All NOS-specific type-to-category mappings and entity queries
  * live here.
  */
 

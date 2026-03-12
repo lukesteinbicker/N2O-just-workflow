@@ -1,13 +1,12 @@
 {
-  "name": "n2o-platform",
+  "name": "nos-platform",
   "version": "0.1.0",
-  "description": "N2O Data Platform — GraphQL Ontology API",
+  "description": "NOS Data Platform — GraphQL Ontology API",
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
-    "start": "node dist/index.js",
-    "migrate": "sqlite3 ../.pm/tasks.db < ../.pm/migrations/004-data-platform.sql"
+    "start": "node dist/index.js"
   },
   "dependencies": {
     "@apollo/server": "^5.4.0",

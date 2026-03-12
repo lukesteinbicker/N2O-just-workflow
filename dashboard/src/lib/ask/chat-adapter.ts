@@ -7,10 +7,11 @@ import { getChats } from "./chat-store";
 type Part = any;
 
 const DEVELOPER_NAME =
-  process.env.NEXT_PUBLIC_N2O_DEVELOPER || "unknown";
+  process.env.NEXT_PUBLIC_NOS_DEVELOPER || "unknown";
 
-// Marker prefix for thinking blocks so the UI can detect and render them differently
+// Marker prefixes for thinking blocks so the UI can detect and render them differently
 export const THINKING_MARKER = "<<THINKING>>\n";
+export const THINKING_STREAM_MARKER = "<<THINKING_STREAM>>\n";
 
 import type { SortClause } from "@/lib/filter-dimensions";
 
@@ -112,13 +113,13 @@ export const askAdapter: ChatModelAdapter = {
 
         if (event.type === "thinking_delta") {
           currentThinking += event.content;
-          // Yield intermediate thinking state so UI shows it streaming
+          // Yield intermediate thinking state with streaming marker
           yield {
             content: [
               ...finalized,
               {
                 type: "text" as const,
-                text: THINKING_MARKER + currentThinking,
+                text: THINKING_STREAM_MARKER + currentThinking,
               },
             ],
           };

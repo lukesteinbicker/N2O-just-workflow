@@ -15,14 +15,14 @@ export function createTestDb(): Database.Database {
 
   // Apply base schema
   const baseSchema = readFileSync(
-    resolve(__dirname, "../../../.pm/schema.sql"),
+    resolve(__dirname, "../../test-fixtures/nos-schema.sql"),
     "utf-8"
   );
   db.exec(baseSchema);
 
   // Apply migration 004 (data platform tables)
   const migration = readFileSync(
-    resolve(__dirname, "../../../.pm/migrations/004-data-platform.sql"),
+    resolve(__dirname, "../../test-fixtures/004-data-platform.sql"),
     "utf-8"
   );
   db.exec(migration);

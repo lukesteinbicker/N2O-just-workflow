@@ -12,7 +12,7 @@ const anthropic = new Anthropic();
 const QUERY_TOOL: Anthropic.Tool = {
   name: "query_ontology",
   description:
-    "Execute a GraphQL query against the N2O data platform API to retrieve developer activity, sprint progress, velocity, quality metrics, and more.",
+    "Execute a GraphQL query against the NOS data platform API to retrieve developer activity, sprint progress, velocity, quality metrics, and more.",
   input_schema: {
     type: "object" as const,
     properties: {
@@ -187,7 +187,7 @@ export async function POST(request: Request) {
   };
   const contextSection = buildContextPrompt(askContext);
 
-  const systemPrompt = `You are an analytics assistant for the N2O developer workflow platform. N2O tracks software development work: tasks, sprints, developers, code quality, estimation accuracy, and velocity.
+  const systemPrompt = `You are an analytics assistant for the NOS developer workflow platform. NOS tracks software development work: tasks, sprints, developers, code quality, estimation accuracy, and velocity.
 
 The current date and time is: ${now}. Use this to anchor any time-relative queries (e.g. "last 2 hours", "today", "this week").
 ${developerLine}
@@ -227,10 +227,14 @@ ${schemaContext}
 | Time estimates vs actuals | \`estimationAccuracy\` or \`blowUpFactors\` | manual calculation |
 | Velocity trends | \`sprintVelocity\` | counting tasks manually |
 | "Who has capacity?" | \`developers\` with \`availability\` and \`tasks(status: "red")\` | \`activityLog\` |
+| "Who uses the platform?" / usage / logins / page visits | \`auditLogs\` — platform usage: logins, page visits, query frequency per user. Rows = individual GraphQL operations, NOT page visits. For visit counts, deduplicate by grouping on performedBy + page + date. | \`activityLog\` |
+| Time tracking / hours / who worked how much | \`timeTrackingSummary(startDate, endDate)\` — pre-aggregated hours per member with daily breakdown and top entries. Returns compact data. | \`timeTrackingEntries\` (raw entries, very large response that will be truncated) |
+
+**IMPORTANT**: For time tracking questions, ALWAYS use \`timeTrackingSummary\` instead of \`timeTrackingEntries\`. The raw entries query returns thousands of rows that get truncated. The summary query returns pre-aggregated hours per member, daily breakdowns, and top entries — everything you need in a compact response.
 
 **IMPORTANT**: \`activityLog\` contains raw, low-level events (tool_call, Read, Edit, Bash, etc.) that are NOT useful for understanding what work was done. These are internal system events. Prefer \`sessionTimeline\` for work summaries, \`conversationFeed\` for conversation details, and \`tasks\` for task-level information. Only use \`activityLog\` if the user specifically asks for raw system events.
 
-## What N2O tracks
+## What NOS tracks
 - **Tasks**: Work items within sprints, with TDD status (pending → red → green), estimates, actuals, testing grades (A-F), reversions
 - **Sprints**: Collections of tasks with start/end dates, goals, progress tracking
 - **Developers**: Team members with skills, availability, velocity profiles, quality metrics
@@ -238,7 +242,8 @@ ${schemaContext}
 - **Conversation Feed** (\`conversationFeed\`): Actual conversation messages between developer and AI, with task/sprint context
 - **Analytics**: Skill usage, estimation accuracy, developer quality, sprint velocity, blow-up factors (actual/estimated ratio)
 - **Events**: Granular workflow events with token usage, phases, agent info (low-level, rarely needed directly)
-- **Activity Log** (\`activityLog\`): Raw system-level events — tool_call, turn_complete, etc. Very granular, mainly for debugging.`;
+- **Activity Log** (\`activityLog\`): Raw system-level events — tool_call, turn_complete, etc. Very granular, mainly for debugging.
+- **Audit Logs** (\`auditLogs\`): Platform usage tracking — every login, page visit, and GraphQL query with who/what/when. Admin-only. Each row is one GraphQL operation, not one page visit (a single page load triggers multiple queries). For visit counts, deduplicate by grouping on performedBy + page + date.`;
 
   const encoder = new TextEncoder();
   const readable = new ReadableStream({
@@ -280,8 +285,8 @@ ${schemaContext}
 
           const stream = anthropic.messages.stream({
             model: "claude-opus-4-6",
-            max_tokens: 16384,
-            thinking: { type: "enabled", budget_tokens: 8000 },
+            max_tokens: 32768,
+            thinking: { type: "enabled", budget_tokens: 10000 },
             system: systemPrompt,
             messages,
             tools: [QUERY_TOOL, CHART_TOOL, PAST_CHATS_TOOL, RECOMMEND_VIEW_TOOL],
@@ -341,9 +346,9 @@ ${schemaContext}
                 // Cap tool result size to prevent token overflow
                 const resultJson = JSON.stringify(result);
                 const cappedResult =
-                  resultJson.length > 8000
-                    ? resultJson.slice(0, 8000) +
-                      "\n... [truncated — result too large, showing first 8000 chars]"
+                  resultJson.length > 15000
+                    ? resultJson.slice(0, 15000) +
+                      "\n... [truncated — result too large, showing first 15000 chars. Use timeTrackingSummary instead of timeTrackingEntries for aggregate data.]"
                     : resultJson;
 
                 toolResults.push({
@@ -435,6 +440,12 @@ ${schemaContext}
             messages.push({ role: "user", content: toolResults });
           } else {
             // No more tool calls — done
+            if (finalMessage.stop_reason === "max_tokens") {
+              send({
+                type: "text_delta",
+                content: "\n\n(Response was cut short due to length limits. Try asking a more focused question.)",
+              });
+            }
             continueLoop = false;
             send({ type: "done", stop_reason: finalMessage.stop_reason });
           }

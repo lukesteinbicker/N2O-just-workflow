@@ -18,8 +18,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "N2O Dashboard",
-  description: "N2O Workflow Framework Dashboard",
+  title: "NOS Dashboard",
+  description: "NOS Developer Platform Dashboard",
 };
 
 export default function RootLayout({
@@ -31,6 +31,7 @@ export default function RootLayout({
     <html lang="en" className="dark">
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        suppressHydrationWarning
       >
         <ApolloWrapper>
           <TooltipProvider>

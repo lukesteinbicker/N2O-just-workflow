@@ -1,5 +1,5 @@
 // Platform API server: Apollo Server 5 + Express + Supabase Postgres.
-// Serves the N2O GraphQL schema on /graphql and SMS webhook on /sms/inbound.
+// Serves the NOS GraphQL schema on /graphql and SMS webhook on /sms/inbound.
 import dotenv from "dotenv";
 dotenv.config({ path: ".env.local" });
 import http from "node:http";
@@ -19,7 +19,7 @@ import { runSync, startSyncLoop, stopSyncLoop, isSyncing } from "./services/togg
 validateDbConfig();
 
 const PORT = parseInt(process.env.PORT ?? "4000");
-const DEV_MODE = process.env.N2O_DEV_MODE === "true";
+const DEV_MODE = process.env.NOS_DEV_MODE === "true";
 const SUPABASE_URL = process.env.SUPABASE_URL ?? `https://${process.env.SUPABASE_REF}.supabase.co`;
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY ?? "";
 
@@ -103,7 +103,7 @@ app.post("/sms/inbound", express.urlencoded({ extended: false }), (_req, res) =>
 });
 
 await new Promise<void>((resolve) => httpServer.listen(PORT, resolve));
-console.log(`N2O Data Platform API ready at http://localhost:${PORT}/graphql`);
+console.log(`NOS Data Platform API ready at http://localhost:${PORT}/graphql`);
 
 // Start Toggl sync: immediate first sync + 5-minute interval
 if (process.env.TOGGL_API_TOKEN) {

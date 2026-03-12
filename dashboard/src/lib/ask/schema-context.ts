@@ -189,7 +189,7 @@ function buildSchemaContext(
   }
 
   const sections: string[] = [];
-  sections.push("# N2O GraphQL API\n");
+  sections.push("# NOS GraphQL API\n");
 
   // ── Query entry points ──
   sections.push("## Queries\n");

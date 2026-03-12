@@ -171,7 +171,7 @@ export const smsResolvers = {
         );
       }
 
-      await sendSms(dev.phone_number, "N2O SMS connected. You're all set!");
+      await sendSms(dev.phone_number, "NOS SMS connected. You're all set!");
       return true;
     },
   },

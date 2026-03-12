@@ -12,6 +12,7 @@ import {
   Sparkles,
   PanelLeftOpen,
   PanelLeftClose,
+  ScrollText,
 } from "lucide-react";
 import {
   Tooltip,
@@ -19,6 +20,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useCurrentUser } from "@/lib/use-current-user";
+import { AccountMenu } from "./account-menu";
 
 const allNavItems = [
   { href: "/tasks", icon: ListTodo, label: "Tasks", adminOnly: false },
@@ -26,6 +28,7 @@ const allNavItems = [
   { href: "/ontology", icon: Network, label: "Ontology", adminOnly: true },
   { href: "/capacity", icon: BarChart3, label: "Capacity", adminOnly: true },
   { href: "/time-tracking", icon: Clock, label: "Time", adminOnly: false },
+  { href: "/audit-log", icon: ScrollText, label: "Audit Log", adminOnly: true },
 ] as const;
 
 export const navItems = allNavItems;
@@ -139,7 +142,7 @@ export function Sidebar({
             className="flex w-full items-center gap-2.5 rounded-md border border-border px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
           >
             <Sparkles size={17} />
-            <span>Ask N2O</span>
+            <span>Ask NOS</span>
           </button>
         ) : (
           <Tooltip delayDuration={0}>
@@ -152,10 +155,13 @@ export function Sidebar({
               </button>
             </TooltipTrigger>
             <TooltipContent side="right" sideOffset={8}>
-              Ask N2O
+              Ask NOS
             </TooltipContent>
           </Tooltip>
         )}
+
+        {/* Account menu */}
+        <AccountMenu expanded={expanded} />
       </div>
     </aside>
   );

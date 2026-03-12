@@ -1,5 +1,5 @@
 // Capacity planner utility functions
-// Extracted from platform/reference/n2o-capacity-planner.jsx
+// Extracted from platform/reference/nos-capacity-planner.jsx
 
 import type { Project, Company, DailyPoint, Tick, ProbStyle, TierMeta } from "./capacity-data";
 import { DATA } from "./capacity-data";

@@ -106,7 +106,7 @@ describe("mapProject", () => {
   it("maps project row correctly", () => {
     const row = {
       id: "proj-1",
-      name: "N2O",
+      name: "NOS",
       description: "Workflow framework",
       repo_url: "https://github.com/test/repo",
       start_at: "2026-01-01",
@@ -116,7 +116,7 @@ describe("mapProject", () => {
     };
     expect(mapProject(row)).toEqual({
       id: "proj-1",
-      name: "N2O",
+      name: "NOS",
       description: "Workflow framework",
       repoUrl: "https://github.com/test/repo",
       startAt: "2026-01-01",

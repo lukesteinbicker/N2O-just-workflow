@@ -17,6 +17,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const isLoginPage = pathname === "/login";
   const isAskPage = pathname === "/ask";
   const isActivityPage = pathname === "/activity";
 
@@ -61,10 +62,10 @@ export function Shell({ children }: { children: React.ReactNode }) {
   // Check if we should open the panel after navigating back from /ask
   useEffect(() => {
     if (!isAskPage && typeof sessionStorage !== "undefined") {
-      const flag = sessionStorage.getItem("n2o-ask-panel-open");
+      const flag = sessionStorage.getItem("nos-ask-panel-open");
       if (flag === "true") {
         setAskOpen(true);
-        sessionStorage.removeItem("n2o-ask-panel-open");
+        sessionStorage.removeItem("nos-ask-panel-open");
       }
     }
   }, [isAskPage]);
@@ -148,7 +149,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
 
   // Minimize = go back from /ask page, keep panel open
   const handleMinimize = useCallback(() => {
-    sessionStorage.setItem("n2o-ask-panel-open", "true");
+    sessionStorage.setItem("nos-ask-panel-open", "true");
     router.back();
   }, [router]);
 
@@ -225,6 +226,11 @@ export function Shell({ children }: { children: React.ReactNode }) {
     onFullscreen: isAskPage ? () => {} : handleFullscreen,
     onMinimize: isAskPage ? handleMinimize : handleClose,
   };
+
+  // Login page: render children only, no shell chrome.
+  if (isLoginPage) {
+    return <>{children}</>;
+  }
 
   // On /ask page, render fullscreen mode with no sidebar/main.
   // ONE AskRuntimeProvider wraps the content — no remounting on mode switch.

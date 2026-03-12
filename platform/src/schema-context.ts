@@ -81,6 +81,7 @@ function categorize(field: IntrospectionField): string {
     return "Analytics — Quality";
   if (["sprintVelocity"].includes(name)) return "Analytics — Sprint";
   if (["sessionTimeline"].includes(name)) return "Analytics — Timeline";
+  if (["auditLogs"].includes(name)) return "Usage";
   if (["dataHealth"].includes(name)) return "System";
   return "Other";
 }
@@ -95,7 +96,7 @@ export function buildSchemaContext(fields: IntrospectionField[]): string {
   }
 
   const sections: string[] = [];
-  sections.push("# N2O GraphQL API — Available Queries\n");
+  sections.push("# NOS GraphQL API — Available Queries\n");
 
   // Ordered category list
   const categoryOrder = [
@@ -104,7 +105,7 @@ export function buildSchemaContext(fields: IntrospectionField[]): string {
     "Analytics — Skill", "Analytics — Velocity",
     "Analytics — Estimation", "Analytics — Quality",
     "Analytics — Sprint", "Analytics — Timeline",
-    "System", "Other",
+    "Usage", "System", "Other",
   ];
 
   for (const cat of categoryOrder) {
@@ -138,6 +139,13 @@ export function buildSchemaContext(fields: IntrospectionField[]): string {
 # Sprint velocity trend
 {
   sprintVelocity { sprint completedTasks avgMinutesPerTask totalMinutes }
+}
+
+# Platform usage: who visits which pages (admin-only)
+{
+  auditLogs(performer: "luke", since: "2026-03-01T00:00:00Z", limit: 100) {
+    action recordId page performedBy performedAt
+  }
 }
 \`\`\``);
 

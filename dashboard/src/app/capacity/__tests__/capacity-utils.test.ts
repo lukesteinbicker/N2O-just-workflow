@@ -432,7 +432,7 @@ describe("flattenProjects", () => {
     expect(result).toHaveLength(15);
     // Check first and last
     expect(result[0].companyId).toBe("totalcents");
-    expect(result[result.length - 1].companyId).toBe("n2o-internal");
+    expect(result[result.length - 1].companyId).toBe("nos-internal");
   });
 });
 
@@ -557,8 +557,8 @@ describe("categorizeCompanies", () => {
     // Armature: active tier, end 2026-08-31 → active-clients
     expect(result["active-clients"].map(c => c.id)).toContain("armature");
 
-    // N2O Internal: all internal, future end → internal
-    expect(result.internal.map(c => c.id)).toContain("n2o-internal");
+    // NOS Internal: all internal, future end → internal
+    expect(result.internal.map(c => c.id)).toContain("nos-internal");
 
     // CDAO: pipeline only → prospective
     expect(result.prospective.map(c => c.id)).toContain("cdao");

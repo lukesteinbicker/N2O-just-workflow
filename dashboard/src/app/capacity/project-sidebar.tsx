@@ -469,7 +469,7 @@ export function ViewsDropdown({
   const handleToggle = () => {
     if (!open && btnRef.current) {
       const r = btnRef.current.getBoundingClientRect();
-      setPos({ top: r.bottom + 4, left: r.right + 8 });
+      setPos({ top: r.bottom + 4, left: r.left });
     }
     setOpen(!open);
   };
@@ -499,28 +499,34 @@ export function ViewsDropdown({
           <>
             <div className="fixed inset-0 z-[9998]" onClick={() => setOpen(false)} />
             <div
-              className="fixed z-[9999] w-[220px] overflow-hidden rounded-md border border-border bg-popover shadow-lg"
+              className="fixed z-[9999] w-[340px] overflow-hidden rounded-lg border border-border bg-popover shadow-2xl"
               style={{ top: pos.top, left: pos.left }}
             >
-              {VIEW_PRESETS.map((v) => (
-                <div
-                  key={v.id}
-                  onClick={() => {
-                    onApplyView(v);
-                    setOpen(false);
-                  }}
-                  className={`cursor-pointer px-3 py-1.5 transition-colors hover:bg-white/[0.04] ${
-                    activeViewId === v.id ? "bg-primary/10" : ""
-                  }`}
-                >
+              <div className="px-4 py-2.5 border-b border-border">
+                <div className="text-xs font-bold tracking-[0.04em] text-foreground">Views</div>
+                <div className="text-[10px] text-muted-foreground mt-0.5">Choose a preset view</div>
+              </div>
+              <div className="py-1">
+                {VIEW_PRESETS.map((v) => (
                   <div
-                    className={`text-[11px] ${activeViewId === v.id ? "font-bold text-white" : "font-medium text-foreground"}`}
+                    key={v.id}
+                    onClick={() => {
+                      onApplyView(v);
+                      setOpen(false);
+                    }}
+                    className={`cursor-pointer px-4 py-2 transition-colors hover:bg-white/[0.04] ${
+                      activeViewId === v.id ? "bg-primary/10" : ""
+                    }`}
                   >
-                    {v.label}
+                    <div
+                      className={`text-xs ${activeViewId === v.id ? "font-bold text-white" : "font-medium text-foreground"}`}
+                    >
+                      {v.label}
+                    </div>
+                    <div className="text-[11px] text-muted-foreground leading-snug mt-0.5">{v.description}</div>
                   </div>
-                  <div className="text-[10px] text-muted-foreground leading-tight">{v.description}</div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
           </>,
           document.body
@@ -673,7 +679,7 @@ export function GroupByDropdown({
   const handleToggle = () => {
     if (!open && btnRef.current) {
       const r = btnRef.current.getBoundingClientRect();
-      setPos({ top: r.bottom + 4, left: r.right + 8 });
+      setPos({ top: r.bottom + 4, left: r.left });
     }
     setOpen(!open);
   };
@@ -703,10 +709,10 @@ export function GroupByDropdown({
           <>
             <div className="fixed inset-0 z-[9998]" onClick={() => setOpen(false)} />
             <div
-              className="fixed z-[9999] w-[220px] rounded-md border border-border bg-popover shadow-lg p-1.5"
+              className="fixed z-[9999] w-[340px] rounded-lg border border-border bg-popover shadow-2xl p-3"
               style={{ top: pos.top, left: pos.left }}
             >
-              <div className="px-1.5 pb-1 text-[9px] font-bold tracking-[0.06em] text-muted-foreground">GROUP & SORT</div>
+              <div className="pb-2 text-xs font-bold tracking-[0.04em] text-foreground">Group &amp; Sort</div>
               <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
                 <SortableContext items={groupOrder} strategy={verticalListSortingStrategy}>
                   {groupOrder.map((dim) => (
@@ -1060,7 +1066,7 @@ const PROJECT_FILTERS: { key: string; label: string; desc: string }[] = [
   { key: "active", label: "Active", desc: "Committed, in-progress projects" },
   { key: "pipeline", label: "Pipeline", desc: "Probable but not yet started" },
   { key: "speculative", label: "Speculative", desc: "Low-probability opportunities" },
-  { key: "internal", label: "Internal", desc: "N2O internal projects" },
+  { key: "internal", label: "Internal", desc: "NOS internal projects" },
 ];
 
 export function FilterDropdown({
@@ -1086,7 +1092,7 @@ export function FilterDropdown({
   const handleToggle = () => {
     if (!open && btnRef.current) {
       const r = btnRef.current.getBoundingClientRect();
-      setPos({ top: r.bottom + 4, left: r.right + 8 });
+      setPos({ top: r.bottom + 4, left: r.left });
     }
     setOpen(!open);
   };
@@ -1129,61 +1135,67 @@ export function FilterDropdown({
           <>
             <div className="fixed inset-0 z-[9998]" onClick={() => setOpen(false)} />
             <div
-              className="fixed z-[9999] w-[220px] overflow-hidden rounded-md border border-border bg-popover shadow-lg"
+              className="fixed z-[9999] w-[340px] overflow-hidden rounded-lg border border-border bg-popover shadow-2xl"
               style={{ top: pos.top, left: pos.left }}
             >
-              {PROJECT_FILTERS.map((f) => (
+              <div className="px-4 py-2.5 border-b border-border">
+                <div className="text-xs font-bold tracking-[0.04em] text-foreground">Filter</div>
+                <div className="text-[10px] text-muted-foreground mt-0.5">Show a subset of projects</div>
+              </div>
+              <div className="py-1">
+                {PROJECT_FILTERS.map((f) => (
+                  <div
+                    key={f.key}
+                    onClick={() => {
+                      onSetViewFilter(f.key);
+                      setOpen(false);
+                    }}
+                    className={`cursor-pointer px-4 py-2 transition-colors hover:bg-white/[0.04] ${
+                      viewFilter === f.key ? "bg-primary/10" : ""
+                    }`}
+                  >
+                    <div
+                      className={`text-xs ${viewFilter === f.key ? "font-bold text-white" : "font-medium text-foreground"}`}
+                    >
+                      {f.label}
+                    </div>
+                    <div className="text-[11px] text-muted-foreground leading-snug mt-0.5">{f.desc}</div>
+                  </div>
+                ))}
+                <div className="my-1 border-t border-border" />
                 <div
-                  key={f.key}
                   onClick={() => {
-                    onSetViewFilter(f.key);
+                    onSetViewFilter("clients-active");
                     setOpen(false);
                   }}
-                  className={`cursor-pointer px-3 py-1.5 transition-colors hover:bg-white/[0.04] ${
-                    viewFilter === f.key ? "bg-primary/10" : ""
+                  className={`cursor-pointer px-4 py-2 transition-colors hover:bg-white/[0.04] ${
+                    viewFilter === "clients-active" ? "bg-primary/10" : ""
                   }`}
                 >
                   <div
-                    className={`text-[11px] ${viewFilter === f.key ? "font-bold text-white" : "font-medium text-foreground"}`}
+                    className={`text-xs ${viewFilter === "clients-active" ? "font-bold text-white" : "font-medium text-foreground"}`}
                   >
-                    {f.label}
+                    Active Clients
                   </div>
-                  <div className="text-[10px] text-muted-foreground leading-tight">{f.desc}</div>
+                  <div className="text-[11px] text-muted-foreground leading-snug mt-0.5">
+                    Clients with active projects — all their projects shown
+                  </div>
                 </div>
-              ))}
-              <div className="my-1 border-t border-border" />
-              <div
-                onClick={() => {
-                  onSetViewFilter("clients-active");
-                  setOpen(false);
-                }}
-                className={`cursor-pointer px-3 py-1.5 transition-colors hover:bg-white/[0.04] ${
-                  viewFilter === "clients-active" ? "bg-primary/10" : ""
-                }`}
-              >
-                <div
-                  className={`text-[11px] ${viewFilter === "clients-active" ? "font-bold text-white" : "font-medium text-foreground"}`}
-                >
-                  Active Clients
-                </div>
-                <div className="text-[10px] text-muted-foreground leading-tight">
-                  Clients with active projects — all their projects shown
-                </div>
+                {isFiltered && (
+                  <>
+                    <div className="my-1 border-t border-border" />
+                    <div
+                      onClick={() => {
+                        onSetViewFilter("all");
+                        setOpen(false);
+                      }}
+                      className="cursor-pointer px-4 py-2 transition-colors hover:bg-white/[0.04]"
+                    >
+                      <div className="text-xs font-medium text-muted-foreground">Reset to Default</div>
+                    </div>
+                  </>
+                )}
               </div>
-              {isFiltered && (
-                <>
-                  <div className="my-1 border-t border-border" />
-                  <div
-                    onClick={() => {
-                      onSetViewFilter("all");
-                      setOpen(false);
-                    }}
-                    className="cursor-pointer px-3 py-1.5 transition-colors hover:bg-white/[0.04]"
-                  >
-                    <div className="text-[11px] font-medium text-muted-foreground">Reset to Default</div>
-                  </div>
-                </>
-              )}
             </div>
           </>,
           document.body

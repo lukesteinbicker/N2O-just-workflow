@@ -1,4 +1,4 @@
-const STORAGE_KEY = "n2o-ask-chats";
+const STORAGE_KEY = "nos-ask-chats";
 const MAX_CHATS = 50;
 
 export interface ChatEntry {
