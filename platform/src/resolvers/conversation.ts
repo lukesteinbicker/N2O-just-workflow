@@ -1,12 +1,8 @@
-import { readFileSync, readdirSync, existsSync, statSync } from "fs";
-import { resolve, join } from "path";
-import { homedir } from "os";
-import { execSync } from "child_process";
-import Database from "better-sqlite3";
 import { requireAdmin } from "../auth.js";
+import { queryAll } from "../db-adapter.js";
 import type { Context } from "../context.js";
 
-// ── JSONL parser ────────────────────────────────────────
+// ── Types ────────────────────────────────────────────────
 
 export interface ToolCallInfo {
   name: string;
@@ -20,7 +16,9 @@ export interface ConversationMessage {
   toolCalls: ToolCallInfo[];
 }
 
-function summarizeTool(name: string, input: any): string {
+// ── Helpers ──────────────────────────────────────────────
+
+export function summarizeTool(name: string, input: any): string {
   if (!input) return "";
   if (input.file_path) return input.file_path.split("/").pop() || input.file_path;
   if (input.command) return input.command.substring(0, 150);
@@ -33,7 +31,7 @@ function summarizeTool(name: string, input: any): string {
   return "";
 }
 
-function stripSystemTags(text: string): string {
+export function stripSystemTags(text: string): string {
   return text
     .replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, "")
     .replace(/<teammate-message[\s\S]*?<\/teammate-message>/g, "")
@@ -41,365 +39,7 @@ function stripSystemTags(text: string): string {
     .trim();
 }
 
-// ── Local SQLite persistence ────────────────────────────
-
-let _localDb: Database.Database | null = null;
-
-function getLocalDb(): Database.Database | null {
-  if (_localDb) return _localDb;
-  const dbPath = resolve(process.cwd(), "..", ".pm", "tasks.db");
-  if (!existsSync(dbPath)) return null;
-  try {
-    _localDb = new Database(dbPath);
-    _localDb.pragma("journal_mode = WAL");
-    return _localDb;
-  } catch {
-    return null;
-  }
-}
-
-interface FullMessage {
-  role: string;
-  content: string | null;
-  timestamp: string | null;
-  model: string | null;
-  inputTokens: number | null;
-  outputTokens: number | null;
-  stopReason: string | null;
-}
-
-interface FullToolCall {
-  messageIndex: number;
-  toolIndex: number;
-  toolUseId: string | null;
-  toolName: string;
-  input: string; // JSON string
-  timestamp: string | null;
-}
-
-function persistToSqlite(
-  sessionId: string,
-  messages: FullMessage[],
-  toolCalls: FullToolCall[],
-): void {
-  const db = getLocalDb();
-  if (!db) return;
-
-  try {
-    const insertMsg = db.prepare(`
-      INSERT OR REPLACE INTO messages
-        (session_id, message_index, role, content, timestamp, model, input_tokens, output_tokens, stop_reason)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    const insertTool = db.prepare(`
-      INSERT OR REPLACE INTO tool_calls
-        (session_id, message_index, tool_index, tool_use_id, tool_name, input, timestamp)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    const tx = db.transaction(() => {
-      for (let i = 0; i < messages.length; i++) {
-        const m = messages[i];
-        insertMsg.run(sessionId, i, m.role, m.content, m.timestamp, m.model, m.inputTokens, m.outputTokens, m.stopReason);
-      }
-      for (const tc of toolCalls) {
-        insertTool.run(sessionId, tc.messageIndex, tc.toolIndex, tc.toolUseId, tc.toolName, tc.input, tc.timestamp);
-      }
-    });
-
-    tx();
-  } catch {
-    // Non-blocking: persist failures don't affect the resolver
-  }
-}
-
-// ── JSONL parser ─────────────────────────────────────────
-
-function parseJSONL(filePath: string, sessionId?: string): ConversationMessage[] {
-  if (!existsSync(filePath)) return [];
-
-  try {
-    const raw = readFileSync(filePath, "utf-8");
-    const lines = raw.split("\n").filter(Boolean);
-    const messages: ConversationMessage[] = [];
-    const fullMessages: FullMessage[] = [];
-    const fullToolCalls: FullToolCall[] = [];
-
-    for (const line of lines) {
-      let entry: any;
-      try {
-        entry = JSON.parse(line);
-      } catch {
-        continue;
-      }
-
-      // User messages
-      if (entry.type === "user" && entry.message?.content) {
-        let text = "";
-        if (typeof entry.message.content === "string") {
-          text = entry.message.content;
-        } else if (Array.isArray(entry.message.content)) {
-          text = entry.message.content
-            .filter((b: any) => b.type === "text")
-            .map((b: any) => b.text || "")
-            .join("\n");
-        }
-        const fullText = stripSystemTags(text);
-        if (fullText) {
-          const msgIndex = fullMessages.length;
-          fullMessages.push({
-            role: "user",
-            content: fullText,
-            timestamp: entry.timestamp || null,
-            model: null,
-            inputTokens: null,
-            outputTokens: null,
-            stopReason: null,
-          });
-          messages.push({
-            role: "user",
-            content: fullText.substring(0, 5000),
-            timestamp: entry.timestamp || null,
-            toolCalls: [],
-          });
-        }
-      }
-
-      // Assistant messages
-      if (entry.type === "assistant" && entry.message?.content) {
-        const blocks = Array.isArray(entry.message.content)
-          ? entry.message.content
-          : [{ type: "text", text: String(entry.message.content) }];
-
-        const textParts: string[] = [];
-        const toolCalls: ToolCallInfo[] = [];
-        let toolIndex = 0;
-        const msgIndex = fullMessages.length;
-
-        for (const block of blocks) {
-          if (block.type === "text" && block.text?.trim()) {
-            textParts.push(block.text);
-          } else if (block.type === "tool_use" && block.name) {
-            toolCalls.push({
-              name: block.name,
-              summary: summarizeTool(block.name, block.input),
-            });
-            fullToolCalls.push({
-              messageIndex: msgIndex,
-              toolIndex: toolIndex++,
-              toolUseId: block.id || null,
-              toolName: block.name,
-              input: JSON.stringify(block.input || {}),
-              timestamp: entry.timestamp || null,
-            });
-          }
-        }
-
-        const fullText = textParts.join("\n");
-        if (fullText || toolCalls.length > 0) {
-          const usage = entry.message?.usage;
-          fullMessages.push({
-            role: "assistant",
-            content: fullText || null,
-            timestamp: entry.timestamp || null,
-            model: entry.message?.model || null,
-            inputTokens: usage?.input_tokens ?? null,
-            outputTokens: usage?.output_tokens ?? null,
-            stopReason: entry.message?.stop_reason || null,
-          });
-          messages.push({
-            role: "assistant",
-            content: fullText ? fullText.substring(0, 5000) : null,
-            timestamp: entry.timestamp || null,
-            toolCalls,
-          });
-        }
-      }
-    }
-
-    // Persist full data to local SQLite (non-blocking)
-    if (sessionId && fullMessages.length > 0) {
-      persistToSqlite(sessionId, fullMessages, fullToolCalls);
-    }
-
-    return messages;
-  } catch {
-    return [];
-  }
-}
-
-// ── Quick metadata scan (reads first + last few lines only) ──
-
-interface SessionMeta {
-  filePath: string;
-  sessionId: string;
-  startedAt: string | null;
-  endedAt: string | null;
-  model: string | null;
-  messageCount: number;
-}
-
-function scanSessionMeta(filePath: string): SessionMeta | null {
-  try {
-    const raw = readFileSync(filePath, "utf-8");
-    const lines = raw.split("\n").filter(Boolean);
-    if (lines.length === 0) return null;
-
-    let sessionId: string | null = null;
-    let startedAt: string | null = null;
-    let endedAt: string | null = null;
-    let model: string | null = null;
-    let userCount = 0;
-
-    // Scan all lines for timestamps and counts, but skip content parsing
-    for (const line of lines) {
-      let entry: any;
-      try {
-        entry = JSON.parse(line);
-      } catch {
-        continue;
-      }
-
-      if (!sessionId && entry.sessionId) {
-        sessionId = entry.sessionId;
-      }
-      if (entry.timestamp) {
-        if (!startedAt) startedAt = entry.timestamp;
-        endedAt = entry.timestamp;
-      }
-      if (!model && entry.type === "assistant" && entry.message?.model) {
-        model = entry.message.model;
-      }
-      if (entry.type === "user") {
-        userCount++;
-      }
-    }
-
-    if (!sessionId || userCount === 0) return null;
-
-    return {
-      filePath,
-      sessionId,
-      startedAt,
-      endedAt,
-      model,
-      messageCount: userCount,
-    };
-  } catch {
-    return null;
-  }
-}
-
-// ── Find JSONL directory for this project ──
-
-function getClaudeProjectDir(): string | null {
-  const projectRoot = resolve(process.cwd(), "..");
-  const encoded = projectRoot.replace(/\//g, "-").replace(/^-/, "");
-  const dir = join(homedir(), ".claude", "projects", `-${encoded}`);
-  if (existsSync(dir)) return dir;
-  // Try without leading dash
-  const dir2 = join(homedir(), ".claude", "projects", encoded);
-  if (existsSync(dir2)) return dir2;
-  return null;
-}
-
-// Git user name for developer attribution
-let gitUserName: string | null = null;
-function getGitUserName(): string | null {
-  if (gitUserName !== null) return gitUserName || null;
-  try {
-    const projectRoot = resolve(process.cwd(), "..");
-    gitUserName = execSync("git config user.name", { cwd: projectRoot, encoding: "utf-8" }).trim();
-  } catch {
-    gitUserName = "";
-  }
-  return gitUserName || null;
-}
-
-// Session cache (refreshed when file list changes)
-let cachedSessions: SessionMeta[] = [];
-let cacheTime = 0;
-const CACHE_TTL = 15_000; // 15s
-
-function getAllSessions(): SessionMeta[] {
-  const now = Date.now();
-  if (cachedSessions.length > 0 && now - cacheTime < CACHE_TTL) {
-    return cachedSessions;
-  }
-
-  const dir = getClaudeProjectDir();
-  if (!dir) return [];
-
-  // Only read top-level .jsonl files (parent sessions, not subagents)
-  const files = readdirSync(dir).filter(
-    (f) => f.endsWith(".jsonl") && !f.startsWith("agent-")
-  );
-
-  const sessions: SessionMeta[] = [];
-  for (const f of files) {
-    const fullPath = join(dir, f);
-    try {
-      const stat = statSync(fullPath);
-      if (!stat.isFile() || stat.size < 100) continue;
-    } catch {
-      continue;
-    }
-    const meta = scanSessionMeta(fullPath);
-    if (meta) sessions.push(meta);
-  }
-
-  // Sort newest first
-  sessions.sort((a, b) => {
-    const ta = a.startedAt ? new Date(a.startedAt).getTime() : 0;
-    const tb = b.startedAt ? new Date(b.startedAt).getTime() : 0;
-    return tb - ta;
-  });
-
-  cachedSessions = sessions;
-  cacheTime = now;
-  return sessions;
-}
-
-// ── SQLite-backed message reader ─────────────────────────
-
-function readMessagesFromSqlite(sessionId: string): ConversationMessage[] | null {
-  const db = getLocalDb();
-  if (!db) return null;
-
-  try {
-    const rows = db.prepare(
-      "SELECT message_index, role, content, timestamp FROM messages WHERE session_id = ? ORDER BY message_index"
-    ).all(sessionId) as any[];
-
-    if (rows.length === 0) return null;
-
-    const toolCallRows = db.prepare(
-      "SELECT message_index, tool_name, input FROM tool_calls WHERE session_id = ? ORDER BY message_index, tool_index"
-    ).all(sessionId) as any[];
-
-    // Group tool calls by message_index
-    const toolsByMsg = new Map<number, ToolCallInfo[]>();
-    for (const tc of toolCallRows) {
-      let input: any = {};
-      try { input = JSON.parse(tc.input); } catch {}
-      const list = toolsByMsg.get(tc.message_index) || [];
-      list.push({ name: tc.tool_name, summary: summarizeTool(tc.tool_name, input) });
-      toolsByMsg.set(tc.message_index, list);
-    }
-
-    return rows.map((r) => ({
-      role: r.role,
-      content: r.content ? r.content.substring(0, 5000) : null,
-      timestamp: r.timestamp,
-      toolCalls: toolsByMsg.get(r.message_index) || [],
-    }));
-  } catch {
-    return null;
-  }
-}
-
-// ── Resolver ────────────────────────────────────────────
+// ── Resolver ─────────────────────────────────────────────
 
 export const conversationResolvers = {
   Query: {
@@ -409,27 +49,102 @@ export const conversationResolvers = {
       ctx: Context,
     ) => {
       requireAdmin(ctx);
-      const allSessions = getAllSessions();
       const limit = Math.min(args.limit || 20, 100);
 
-      // TODO: developer filter would need task linkage; skip for now
-      const sessions = allSessions.slice(0, limit);
+      // Query 1: Get session list from transcripts
+      let transcriptSql = `SELECT session_id, file_path, model, started_at, ended_at, sprint, task_num
+        FROM transcripts`;
+      const params: any[] = [];
+      const conditions: string[] = [];
 
-      const developer = getGitUserName();
+      if (args.developer) {
+        conditions.push(`session_id IN (
+          SELECT t.session_id FROM transcripts t
+          JOIN tasks tk ON t.sprint = tk.sprint AND t.task_num = tk.task_num
+          WHERE tk.owner = ?
+        )`);
+        params.push(args.developer);
+      }
 
-      return sessions.map((s) => {
-        // Try SQLite first (faster, no re-parse), fall back to JSONL
-        const messages = readMessagesFromSqlite(s.sessionId) ?? parseJSONL(s.filePath, s.sessionId);
+      if (conditions.length > 0) {
+        transcriptSql += ` WHERE ${conditions.join(" AND ")}`;
+      }
+
+      transcriptSql += ` ORDER BY started_at DESC LIMIT ?`;
+      params.push(limit);
+
+      const sessions = await queryAll(ctx.db, transcriptSql, params);
+
+      if (sessions.length === 0) {
+        return [];
+      }
+
+      // Collect session IDs for batched queries
+      const sessionIds = sessions.map((s: any) => s.session_id);
+      const placeholders = sessionIds.map(() => "?").join(",");
+
+      // Query 2: Batch fetch all messages for these sessions
+      const messageRows = await queryAll(
+        ctx.db,
+        `SELECT session_id, message_index, role, content, timestamp
+         FROM messages
+         WHERE session_id IN (${placeholders})
+         ORDER BY session_id, message_index`,
+        sessionIds
+      );
+
+      // Query 3: Batch fetch all tool calls for these sessions
+      const toolCallRows = await queryAll(
+        ctx.db,
+        `SELECT session_id, message_index, tool_index, tool_name, input
+         FROM tool_calls
+         WHERE session_id IN (${placeholders})
+         ORDER BY session_id, message_index, tool_index`,
+        sessionIds
+      );
+
+      // Group messages by session_id
+      const messagesBySession = new Map<string, any[]>();
+      for (const row of messageRows) {
+        const list = messagesBySession.get(row.session_id) || [];
+        list.push(row);
+        messagesBySession.set(row.session_id, list);
+      }
+
+      // Group tool calls by session_id + message_index
+      const toolCallsByKey = new Map<string, ToolCallInfo[]>();
+      for (const row of toolCallRows) {
+        const key = `${row.session_id}:${row.message_index}`;
+        const list = toolCallsByKey.get(key) || [];
+        let input: any = {};
+        try { input = JSON.parse(row.input); } catch {}
+        list.push({
+          name: row.tool_name,
+          summary: summarizeTool(row.tool_name, input),
+        });
+        toolCallsByKey.set(key, list);
+      }
+
+      // Assemble response
+      return sessions.map((s: any) => {
+        const msgs = messagesBySession.get(s.session_id) || [];
+        const messages: ConversationMessage[] = msgs.map((m: any) => ({
+          role: m.role,
+          content: m.content ? stripSystemTags(m.content) : null,
+          timestamp: m.timestamp || null,
+          toolCalls: toolCallsByKey.get(`${s.session_id}:${m.message_index}`) || [],
+        }));
+
         return {
-          sessionId: s.sessionId,
-          _developer: developer,
-          _sprint: null,
-          taskNum: null,
-          _taskNum: null,
+          sessionId: s.session_id,
+          _developer: null, // resolved via task owner
+          _sprint: s.sprint || null,
+          taskNum: s.task_num || null,
+          _taskNum: s.task_num || null,
           taskTitle: null,
-          startedAt: s.startedAt,
-          endedAt: s.endedAt,
-          model: s.model,
+          startedAt: s.started_at || null,
+          endedAt: s.ended_at || null,
+          model: s.model || null,
           messages,
         };
       });
