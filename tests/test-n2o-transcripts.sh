@@ -661,6 +661,360 @@ JSONL
   assert_equals "2" "$msg_count" "Should recover 2 valid messages from truncated file"
 }
 
+# -----------------------------------------------------------------------------
+# Tests: Message + Tool Call extraction (NOS Transcript Sync)
+# -----------------------------------------------------------------------------
+
+test_messages_basic_extraction() {
+  create_basic_fixture "$CLAUDE_TEST_DIR"
+
+  (cd "$TEST_DIR" && bash "$COLLECT") > /dev/null 2>&1
+
+  local db="$TEST_DIR/.pm/tasks.db"
+
+  # Should have 4 messages (2 user, 2 assistant)
+  local msg_count
+  msg_count=$(sqlite3 "$db" "SELECT COUNT(*) FROM messages;")
+  assert_equals "4" "$msg_count" "Should have 4 message rows"
+
+  # Check user message count
+  local user_count
+  user_count=$(sqlite3 "$db" "SELECT COUNT(*) FROM messages WHERE role = 'user';")
+  assert_equals "2" "$user_count" "Should have 2 user messages"
+
+  # Check assistant message count
+  local asst_count
+  asst_count=$(sqlite3 "$db" "SELECT COUNT(*) FROM messages WHERE role = 'assistant';")
+  assert_equals "2" "$asst_count" "Should have 2 assistant messages"
+}
+
+test_messages_content() {
+  create_basic_fixture "$CLAUDE_TEST_DIR"
+
+  (cd "$TEST_DIR" && bash "$COLLECT") > /dev/null 2>&1
+
+  local db="$TEST_DIR/.pm/tasks.db"
+
+  # First user message content should be "Hello"
+  local first_content
+  first_content=$(sqlite3 "$db" "SELECT content FROM messages WHERE role = 'user' ORDER BY message_index LIMIT 1;")
+  assert_equals "Hello" "$first_content" "First user message should be 'Hello'"
+
+  # First assistant message content should be "Hi there"
+  local asst_content
+  asst_content=$(sqlite3 "$db" "SELECT content FROM messages WHERE role = 'assistant' ORDER BY message_index LIMIT 1;")
+  assert_equals "Hi there" "$asst_content" "First assistant message should be 'Hi there'"
+}
+
+test_messages_timestamps() {
+  create_basic_fixture "$CLAUDE_TEST_DIR"
+
+  (cd "$TEST_DIR" && bash "$COLLECT") > /dev/null 2>&1
+
+  local db="$TEST_DIR/.pm/tasks.db"
+
+  local first_ts
+  first_ts=$(sqlite3 "$db" "SELECT timestamp FROM messages ORDER BY message_index LIMIT 1;")
+  assert_equals "2025-02-20T10:00:00Z" "$first_ts" "First message timestamp should match fixture"
+
+  local last_ts
+  last_ts=$(sqlite3 "$db" "SELECT timestamp FROM messages ORDER BY message_index DESC LIMIT 1;")
+  assert_equals "2025-02-20T10:00:15Z" "$last_ts" "Last message timestamp should match fixture"
+}
+
+test_messages_session_id() {
+  create_basic_fixture "$CLAUDE_TEST_DIR"
+
+  (cd "$TEST_DIR" && bash "$COLLECT") > /dev/null 2>&1
+
+  local db="$TEST_DIR/.pm/tasks.db"
+
+  # All messages should have the correct session_id
+  local distinct_sessions
+  distinct_sessions=$(sqlite3 "$db" "SELECT COUNT(DISTINCT session_id) FROM messages;")
+  assert_equals "1" "$distinct_sessions" "All messages should have same session_id"
+
+  local session_id
+  session_id=$(sqlite3 "$db" "SELECT session_id FROM messages LIMIT 1;")
+  assert_equals "test-session-001" "$session_id" "session_id should match fixture"
+}
+
+test_messages_message_index() {
+  create_basic_fixture "$CLAUDE_TEST_DIR"
+
+  (cd "$TEST_DIR" && bash "$COLLECT") > /dev/null 2>&1
+
+  local db="$TEST_DIR/.pm/tasks.db"
+
+  # message_index should be sequential (0, 1, 2, 3)
+  local indexes
+  indexes=$(sqlite3 "$db" "SELECT GROUP_CONCAT(message_index, ',') FROM messages ORDER BY message_index;")
+  assert_equals "0,1,2,3" "$indexes" "message_index should be 0,1,2,3"
+}
+
+test_messages_assistant_metadata() {
+  create_basic_fixture "$CLAUDE_TEST_DIR"
+
+  (cd "$TEST_DIR" && bash "$COLLECT") > /dev/null 2>&1
+
+  local db="$TEST_DIR/.pm/tasks.db"
+
+  # First assistant message should have model, tokens
+  local model
+  model=$(sqlite3 "$db" "SELECT model FROM messages WHERE role = 'assistant' ORDER BY message_index LIMIT 1;")
+  assert_equals "claude-sonnet-4-20250514" "$model" "Assistant message should have model"
+
+  local input_tokens
+  input_tokens=$(sqlite3 "$db" "SELECT input_tokens FROM messages WHERE role = 'assistant' ORDER BY message_index LIMIT 1;")
+  assert_equals "100" "$input_tokens" "First assistant input_tokens should be 100"
+
+  local output_tokens
+  output_tokens=$(sqlite3 "$db" "SELECT output_tokens FROM messages WHERE role = 'assistant' ORDER BY message_index LIMIT 1;")
+  assert_equals "50" "$output_tokens" "First assistant output_tokens should be 50"
+}
+
+test_tool_calls_extraction() {
+  create_tool_call_fixture "$CLAUDE_TEST_DIR"
+
+  (cd "$TEST_DIR" && bash "$COLLECT") > /dev/null 2>&1
+
+  local db="$TEST_DIR/.pm/tasks.db"
+
+  # Should have 2 tool calls (Read + Edit in same message)
+  local tc_count
+  tc_count=$(sqlite3 "$db" "SELECT COUNT(*) FROM tool_calls;")
+  assert_equals "2" "$tc_count" "Should have 2 tool_call rows"
+
+  # Check tool names
+  local read_count
+  read_count=$(sqlite3 "$db" "SELECT COUNT(*) FROM tool_calls WHERE tool_name = 'Read';")
+  assert_equals "1" "$read_count" "Should have 1 Read tool call"
+
+  local edit_count
+  edit_count=$(sqlite3 "$db" "SELECT COUNT(*) FROM tool_calls WHERE tool_name = 'Edit';")
+  assert_equals "1" "$edit_count" "Should have 1 Edit tool call"
+}
+
+test_tool_calls_full_input() {
+  create_tool_call_fixture "$CLAUDE_TEST_DIR"
+
+  (cd "$TEST_DIR" && bash "$COLLECT") > /dev/null 2>&1
+
+  local db="$TEST_DIR/.pm/tasks.db"
+
+  # Read tool call should have full input JSON with file_path
+  local read_input
+  read_input=$(sqlite3 "$db" "SELECT input FROM tool_calls WHERE tool_name = 'Read';")
+  local read_file_path
+  read_file_path=$(echo "$read_input" | jq -r '.file_path' 2>/dev/null)
+  assert_equals "/tmp/test.txt" "$read_file_path" "Read input should have file_path"
+
+  # Edit tool call should have full input with old_string and new_string (NO truncation)
+  local edit_input
+  edit_input=$(sqlite3 "$db" "SELECT input FROM tool_calls WHERE tool_name = 'Edit';")
+  local old_string
+  old_string=$(echo "$edit_input" | jq -r '.old_string' 2>/dev/null)
+  assert_equals "a" "$old_string" "Edit input should have old_string"
+
+  local new_string
+  new_string=$(echo "$edit_input" | jq -r '.new_string' 2>/dev/null)
+  assert_equals "b" "$new_string" "Edit input should have new_string"
+}
+
+test_tool_calls_positioning() {
+  create_tool_call_fixture "$CLAUDE_TEST_DIR"
+
+  (cd "$TEST_DIR" && bash "$COLLECT") > /dev/null 2>&1
+
+  local db="$TEST_DIR/.pm/tasks.db"
+
+  # Both tool calls should have message_index = 1 (second message, the assistant one)
+  local msg_indexes
+  msg_indexes=$(sqlite3 "$db" "SELECT GROUP_CONCAT(message_index, ',') FROM tool_calls ORDER BY tool_index;")
+  assert_equals "1,1" "$msg_indexes" "Both tool calls should be in message_index 1"
+
+  # tool_index should be 0 and 1
+  local tool_indexes
+  tool_indexes=$(sqlite3 "$db" "SELECT GROUP_CONCAT(tool_index, ',') FROM tool_calls ORDER BY tool_index;")
+  assert_equals "0,1" "$tool_indexes" "tool_index should be 0,1"
+}
+
+test_tool_calls_tool_use_id() {
+  create_tool_call_fixture "$CLAUDE_TEST_DIR"
+
+  (cd "$TEST_DIR" && bash "$COLLECT") > /dev/null 2>&1
+
+  local db="$TEST_DIR/.pm/tasks.db"
+
+  local read_id
+  read_id=$(sqlite3 "$db" "SELECT tool_use_id FROM tool_calls WHERE tool_name = 'Read';")
+  assert_equals "toolu_read1" "$read_id" "Read tool_use_id should match fixture"
+
+  local edit_id
+  edit_id=$(sqlite3 "$db" "SELECT tool_use_id FROM tool_calls WHERE tool_name = 'Edit';")
+  assert_equals "toolu_edit1" "$edit_id" "Edit tool_use_id should match fixture"
+}
+
+test_messages_idempotency() {
+  create_basic_fixture "$CLAUDE_TEST_DIR"
+
+  (cd "$TEST_DIR" && bash "$COLLECT") > /dev/null 2>&1
+  (cd "$TEST_DIR" && bash "$COLLECT") > /dev/null 2>&1
+
+  local db="$TEST_DIR/.pm/tasks.db"
+
+  # Running twice should NOT duplicate messages
+  local msg_count
+  msg_count=$(sqlite3 "$db" "SELECT COUNT(*) FROM messages;")
+  assert_equals "4" "$msg_count" "Running twice should still have 4 message rows (no duplicates)"
+
+  # And no duplicate tool calls
+  create_tool_call_fixture "$CLAUDE_TEST_DIR" "session-tc-idem"
+  (cd "$TEST_DIR" && bash "$COLLECT") > /dev/null 2>&1
+  (cd "$TEST_DIR" && bash "$COLLECT") > /dev/null 2>&1
+
+  local tc_count
+  tc_count=$(sqlite3 "$db" "SELECT COUNT(*) FROM tool_calls WHERE session_id = 'session-tc-idem';")
+  assert_equals "2" "$tc_count" "Running twice should still have 2 tool_call rows for session"
+}
+
+test_messages_update_mode() {
+  # Simulate growing session: collect once, append, collect again
+  create_basic_fixture "$CLAUDE_TEST_DIR"
+
+  (cd "$TEST_DIR" && bash "$COLLECT") > /dev/null 2>&1
+
+  local db="$TEST_DIR/.pm/tasks.db"
+  local msg_count
+  msg_count=$(sqlite3 "$db" "SELECT COUNT(*) FROM messages WHERE session_id = 'test-session-001';")
+  assert_equals "4" "$msg_count" "Initial: should have 4 messages"
+
+  # Append more messages
+  cat >> "$CLAUDE_TEST_DIR/test-session-001.jsonl" <<JSONL
+{"type":"user","sessionId":"test-session-001","timestamp":"2025-02-20T10:00:20Z","message":{"role":"user","content":[{"type":"text","text":"Another question"}]}}
+{"type":"assistant","sessionId":"test-session-001","timestamp":"2025-02-20T10:00:25Z","message":{"role":"assistant","model":"claude-sonnet-4-20250514","content":[{"type":"text","text":"Another answer"}],"usage":{"input_tokens":300,"output_tokens":100}}}
+JSONL
+
+  (cd "$TEST_DIR" && bash "$COLLECT") > /dev/null 2>&1
+
+  # Should now have 6 messages (deleted old, re-inserted all)
+  msg_count=$(sqlite3 "$db" "SELECT COUNT(*) FROM messages WHERE session_id = 'test-session-001';")
+  assert_equals "6" "$msg_count" "After growth: should have 6 messages"
+
+  # synced_at should be NULL (needs re-sync)
+  local synced
+  synced=$(sqlite3 "$db" "SELECT COALESCE(synced_at, 'NULL') FROM messages WHERE session_id = 'test-session-001' LIMIT 1;")
+  assert_equals "NULL" "$synced" "synced_at should be NULL after update"
+}
+
+test_reparse_clears_messages_and_tool_calls() {
+  create_basic_fixture "$CLAUDE_TEST_DIR"
+  create_tool_call_fixture "$CLAUDE_TEST_DIR" "session-tc-reparse"
+
+  (cd "$TEST_DIR" && bash "$COLLECT") > /dev/null 2>&1
+
+  local db="$TEST_DIR/.pm/tasks.db"
+
+  # Verify data exists before reparse
+  local msg_before
+  msg_before=$(sqlite3 "$db" "SELECT COUNT(*) FROM messages;")
+  assert_gt "$msg_before" "0" "Should have messages before reparse"
+
+  local tc_before
+  tc_before=$(sqlite3 "$db" "SELECT COUNT(*) FROM tool_calls;")
+  assert_gt "$tc_before" "0" "Should have tool_calls before reparse"
+
+  # Reparse should clear and re-collect
+  (cd "$TEST_DIR" && bash "$COLLECT" --reparse) > /dev/null 2>&1
+
+  # Should still have data (re-collected after clearing)
+  local msg_after
+  msg_after=$(sqlite3 "$db" "SELECT COUNT(*) FROM messages;")
+  assert_equals "$msg_before" "$msg_after" "Should have same message count after reparse (cleared then re-collected)"
+
+  local tc_after
+  tc_after=$(sqlite3 "$db" "SELECT COUNT(*) FROM tool_calls;")
+  assert_equals "$tc_before" "$tc_after" "Should have same tool_call count after reparse (cleared then re-collected)"
+}
+
+test_subagent_messages_session_id_normalized() {
+  create_subagent_fixture "$CLAUDE_TEST_DIR"
+
+  (cd "$TEST_DIR" && bash "$COLLECT") > /dev/null 2>&1
+
+  local db="$TEST_DIR/.pm/tasks.db"
+
+  # Subagent session_id should be normalized as parent_session_id/agent_id
+  local msg_session
+  msg_session=$(sqlite3 "$db" "SELECT session_id FROM messages LIMIT 1;")
+  assert_equals "parent-session-001/explore" "$msg_session" "Subagent message session_id should be normalized"
+
+  # Transcript session_id should match
+  local tr_session
+  tr_session=$(sqlite3 "$db" "SELECT session_id FROM transcripts LIMIT 1;")
+  assert_equals "$msg_session" "$tr_session" "Message session_id should match transcript session_id"
+
+  # Tool calls should also have normalized session_id
+  local tc_session
+  tc_session=$(sqlite3 "$db" "SELECT session_id FROM tool_calls LIMIT 1;")
+  assert_equals "parent-session-001/explore" "$tc_session" "Subagent tool_call session_id should be normalized"
+}
+
+test_comprehensive_messages_and_tools() {
+  create_comprehensive_fixture "$CLAUDE_TEST_DIR"
+
+  (cd "$TEST_DIR" && bash "$COLLECT") > /dev/null 2>&1
+
+  local db="$TEST_DIR/.pm/tasks.db"
+
+  # Comprehensive fixture has: 2 user, 3 assistant messages (including tool_result user messages)
+  # user messages: "Implement the feature" + tool_result (content block) + tool_result (content block)
+  # assistant messages: thinking+Read, thinking+Edit, text-only
+  # We count user/assistant messages from the JSONL (type=user, type=assistant)
+  # There are 3 type=user and 3 type=assistant in the comprehensive fixture
+  local asst_count
+  asst_count=$(sqlite3 "$db" "SELECT COUNT(*) FROM messages WHERE role = 'assistant';")
+  assert_equals "3" "$asst_count" "Should have 3 assistant messages"
+
+  # Should have 2 tool calls (Read + Edit)
+  local tc_count
+  tc_count=$(sqlite3 "$db" "SELECT COUNT(*) FROM tool_calls;")
+  assert_equals "2" "$tc_count" "Should have 2 tool calls (Read + Edit)"
+
+  # Assistant message with text-only content should have the right text
+  local text_msg
+  text_msg=$(sqlite3 "$db" "SELECT content FROM messages WHERE role = 'assistant' ORDER BY message_index DESC LIMIT 1;")
+  assert_equals "Done! The feature is implemented." "$text_msg" "Last assistant message should have text content"
+
+  # Stop reason should be captured
+  local stop_reason
+  stop_reason=$(sqlite3 "$db" "SELECT stop_reason FROM messages WHERE role = 'assistant' ORDER BY message_index DESC LIMIT 1;")
+  assert_equals "end_turn" "$stop_reason" "Last assistant should have stop_reason end_turn"
+}
+
+test_messages_multiple_sessions() {
+  create_basic_fixture "$CLAUDE_TEST_DIR" "session-aaa"
+  create_basic_fixture "$CLAUDE_TEST_DIR" "session-bbb"
+
+  (cd "$TEST_DIR" && bash "$COLLECT") > /dev/null 2>&1
+
+  local db="$TEST_DIR/.pm/tasks.db"
+
+  # Should have 8 messages total (4 per session)
+  local msg_count
+  msg_count=$(sqlite3 "$db" "SELECT COUNT(*) FROM messages;")
+  assert_equals "8" "$msg_count" "Should have 8 messages for 2 sessions"
+
+  # Each session should have 4 messages
+  local aaa_count
+  aaa_count=$(sqlite3 "$db" "SELECT COUNT(*) FROM messages WHERE session_id = 'session-aaa';")
+  assert_equals "4" "$aaa_count" "session-aaa should have 4 messages"
+
+  local bbb_count
+  bbb_count=$(sqlite3 "$db" "SELECT COUNT(*) FROM messages WHERE session_id = 'session-bbb';")
+  assert_equals "4" "$bbb_count" "session-bbb should have 4 messages"
+}
+
 # =============================================================================
 # Run tests
 # =============================================================================
@@ -700,6 +1054,27 @@ run_test "Background task count"                     test_transcript_background_
 run_test "Web search/fetch count"                    test_transcript_web_search_count
 run_test "Mid-session update (file grew)"            test_transcript_mid_session_update
 run_test "Truncated file recovery (crash)"           test_transcript_truncated_file_recovery
+
+echo ""
+echo -e "${BOLD}Message + Tool Call Extraction (NOS Transcript Sync)${NC}"
+echo ""
+
+run_test "Messages: basic extraction"                 test_messages_basic_extraction
+run_test "Messages: content matches fixture"          test_messages_content
+run_test "Messages: timestamps"                       test_messages_timestamps
+run_test "Messages: session_id"                       test_messages_session_id
+run_test "Messages: message_index sequential"         test_messages_message_index
+run_test "Messages: assistant metadata (model/tokens)" test_messages_assistant_metadata
+run_test "Tool calls: extraction"                     test_tool_calls_extraction
+run_test "Tool calls: full input JSON (no truncation)" test_tool_calls_full_input
+run_test "Tool calls: message_index/tool_index"       test_tool_calls_positioning
+run_test "Tool calls: tool_use_id"                    test_tool_calls_tool_use_id
+run_test "Messages: idempotency (no duplicates)"      test_messages_idempotency
+run_test "Messages: UPDATE_MODE (growing session)"    test_messages_update_mode
+run_test "Reparse clears messages + tool_calls"       test_reparse_clears_messages_and_tool_calls
+run_test "Subagent: session_id normalized"            test_subagent_messages_session_id_normalized
+run_test "Comprehensive: messages + tools together"   test_comprehensive_messages_and_tools
+run_test "Messages: multiple sessions"                test_messages_multiple_sessions
 
 echo ""
 echo -e "${BOLD}Results: $PASS passed, $FAIL failed, $TOTAL total${NC}"

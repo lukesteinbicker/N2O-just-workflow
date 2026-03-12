@@ -127,8 +127,8 @@ log_info "Database: $DB"
 # ---------------------------------------------------------------------------
 if [[ "$REPARSE" == "true" ]]; then
   log_warn "Reparse mode: deleting all existing transcript and event data"
-  sqlite3 "$DB" "DELETE FROM workflow_events; DELETE FROM transcripts;"
-  log_info "Cleared workflow_events and transcripts tables"
+  sqlite3 "$DB" "DELETE FROM workflow_events; DELETE FROM transcripts; DELETE FROM messages; DELETE FROM tool_calls;"
+  log_info "Cleared workflow_events, transcripts, messages, and tool_calls tables"
 fi
 
 # ---------------------------------------------------------------------------
@@ -364,7 +364,48 @@ for jsonl_file in "${JSONL_FILES[@]}"; do
           ),
           is_write: (if .name == "Edit" or .name == "Write" then true else false end)
         }
-      ]
+      ],
+
+      # --- Full messages for messages table (NOS transcript sync) ---
+      full_messages: [.[] | select(.type == "user" or .type == "assistant") |
+        select(.message.content != null) |
+        {
+          role: .type,
+          content: (if (.message.content | type) == "array" then
+            [.message.content[] | select(.type == "text") | .text // ""] | join("\n")
+          elif (.message.content | type) == "string" then
+            .message.content
+          else "" end),
+          timestamp: (.timestamp // null),
+          model: (.message.model // null),
+          input_tokens: (.message.usage.input_tokens // null),
+          output_tokens: (.message.usage.output_tokens // null),
+          stop_reason: (.message.stop_reason // null)
+        }
+      ],
+
+      # --- Full tool calls for tool_calls table (NOS transcript sync) ---
+      full_tool_calls: (
+        # Assign sequential message_index to user+assistant messages, then extract tool_use blocks
+        [.[] | select(.type == "user" or .type == "assistant") | select(.message.content != null)] |
+        to_entries | map(
+          .key as $midx | .value |
+          select(.type == "assistant") |
+          .timestamp as $ts |
+          (if (.message.content | type) == "array" then
+            [.message.content[] | select(.type == "tool_use")]
+          else [] end) |
+          to_entries[] |
+          {
+            message_index: $midx,
+            tool_index: .key,
+            tool_use_id: (.value.id // null),
+            tool_name: .value.name,
+            input: (.value.input // {}),
+            timestamp: $ts
+          }
+        )
+      )
     }
   ' "$jq_input" 2>/dev/null) || true
 
@@ -640,6 +681,80 @@ for jsonl_file in "${JSONL_FILES[@]}"; do
 
     sql_batch+="COMMIT;"
     sqlite3 "$DB" "$sql_batch"
+  fi
+
+  # -------------------------------------------------------------------------
+  # Insert messages into messages table (NOS transcript sync)
+  # -------------------------------------------------------------------------
+  full_messages_json=$(echo "$metadata" | jq -c '.full_messages[]' 2>/dev/null)
+
+  if [[ -n "$full_messages_json" ]]; then
+    msg_sql="BEGIN TRANSACTION;"
+
+    # In UPDATE_MODE, delete old messages first (delete+re-insert pattern)
+    if [[ "$UPDATE_MODE" == "true" ]]; then
+      msg_sql+="DELETE FROM messages WHERE session_id = '$sql_session_id';"
+    fi
+
+    msg_idx=0
+    while IFS= read -r msg; do
+      msg_role=$(echo "$msg" | jq -r '.role')
+      msg_content=$(echo "$msg" | jq -r '.content // empty')
+      msg_ts=$(echo "$msg" | jq -r '.timestamp // empty')
+      msg_model=$(echo "$msg" | jq -r '.model // empty')
+      msg_in_tok=$(echo "$msg" | jq -r '.input_tokens // empty')
+      msg_out_tok=$(echo "$msg" | jq -r '.output_tokens // empty')
+      msg_stop=$(echo "$msg" | jq -r '.stop_reason // empty')
+
+      # Escape single quotes for SQL (double-quote the pattern/replacement to avoid literal backslashes)
+      sql_content="${msg_content//"'"/"''"}"
+      model_val="NULL"; [[ -n "$msg_model" ]] && model_val="'${msg_model//"'"/"''"}'"
+      msg_ts_val="NULL"; [[ -n "$msg_ts" ]] && msg_ts_val="'$msg_ts'"
+      in_tok_val="NULL"; [[ -n "$msg_in_tok" ]] && in_tok_val="$msg_in_tok"
+      out_tok_val="NULL"; [[ -n "$msg_out_tok" ]] && out_tok_val="$msg_out_tok"
+      stop_val="NULL"; [[ -n "$msg_stop" ]] && stop_val="'${msg_stop//"'"/"''"}'"
+
+      msg_sql+="INSERT OR REPLACE INTO messages (session_id, message_index, role, content, timestamp, model, input_tokens, output_tokens, stop_reason) VALUES ('$sql_session_id', $msg_idx, '$msg_role', '$sql_content', $msg_ts_val, $model_val, $in_tok_val, $out_tok_val, $stop_val);"
+
+      ((msg_idx++)) || true
+    done <<< "$full_messages_json"
+
+    msg_sql+="COMMIT;"
+    sqlite3 "$DB" "$msg_sql" 2>/dev/null || log_warn "Failed to insert messages for: $basename_file"
+  fi
+
+  # -------------------------------------------------------------------------
+  # Insert tool calls into tool_calls table (NOS transcript sync)
+  # -------------------------------------------------------------------------
+  full_tc_json=$(echo "$metadata" | jq -c '.full_tool_calls[]' 2>/dev/null)
+
+  if [[ -n "$full_tc_json" ]]; then
+    tc_sql="BEGIN TRANSACTION;"
+
+    # In UPDATE_MODE, delete old tool_calls first
+    if [[ "$UPDATE_MODE" == "true" ]]; then
+      tc_sql+="DELETE FROM tool_calls WHERE session_id = '$sql_session_id';"
+    fi
+
+    while IFS= read -r ftc; do
+      ftc_msg_idx=$(echo "$ftc" | jq -r '.message_index')
+      ftc_tool_idx=$(echo "$ftc" | jq -r '.tool_index')
+      ftc_tool_use_id=$(echo "$ftc" | jq -r '.tool_use_id // empty')
+      ftc_tool_name=$(echo "$ftc" | jq -r '.tool_name')
+      ftc_input=$(echo "$ftc" | jq -c '.input // {}')
+      ftc_ts=$(echo "$ftc" | jq -r '.timestamp // empty')
+
+      # Escape single quotes for SQL
+      sql_ftc_input="${ftc_input//"'"/"''"}"
+      sql_ftc_name="${ftc_tool_name//"'"/"''"}"
+      ftc_id_val="NULL"; [[ -n "$ftc_tool_use_id" ]] && ftc_id_val="'${ftc_tool_use_id//"'"/"''"}'"
+      ftc_ts_val="NULL"; [[ -n "$ftc_ts" ]] && ftc_ts_val="'$ftc_ts'"
+
+      tc_sql+="INSERT OR REPLACE INTO tool_calls (session_id, message_index, tool_index, tool_use_id, tool_name, input, timestamp) VALUES ('$sql_session_id', $ftc_msg_idx, $ftc_tool_idx, $ftc_id_val, '$sql_ftc_name', '$sql_ftc_input', $ftc_ts_val);"
+    done <<< "$full_tc_json"
+
+    tc_sql+="COMMIT;"
+    sqlite3 "$DB" "$tc_sql" 2>/dev/null || log_warn "Failed to insert tool_calls for: $basename_file"
   fi
 
   ((NEW_COUNT++)) || true
