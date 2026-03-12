@@ -83,11 +83,17 @@ describe("Resolvers migrated to Postgres", () => {
     expect(queryLog.some((q) => q.sql.includes("deleted_at IS NULL"))).toBe(true);
     expect(mockFetchToggl).not.toHaveBeenCalled();
 
-    // Result maps DB columns to GraphQL fields
+    // Result maps all DB columns to GraphQL fields
     expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("100");  // String coercion from numeric id
+    expect(result[0].description).toBe("Work");
+    expect(result[0].start).toBe("2026-03-01T09:00:00Z");
+    expect(result[0].stop).toBe("2026-03-01T10:00:00Z");
+    expect(result[0].seconds).toBe(3600);
     expect(result[0].userId).toBe(1);
     expect(result[0].projectId).toBe(10);
     expect(result[0].tagIds).toEqual([1, 2]);
+    expect(result[0].billable).toBe(false);
   });
 
   it("timeTrackingEntries supports limit and offset", async () => {
@@ -113,7 +119,8 @@ describe("Resolvers migrated to Postgres", () => {
     );
 
     const entry = queryLog.find((q) => q.sql.includes("tt_entries"));
-    expect(entry!.params).toContain(5000);
+    expect(entry!.params).toContain(5000);  // default limit
+    expect(entry!.params).toContain(0);     // default offset
   });
 
   it("timeTrackingProjects queries tt_projects", async () => {
@@ -126,8 +133,11 @@ describe("Resolvers migrated to Postgres", () => {
     expect(queryLog.some((q) => q.sql.includes("tt_projects"))).toBe(true);
     expect(mockFetchToggl).not.toHaveBeenCalled();
     expect(result).toHaveLength(1);
+    expect(result[0].id).toBe(10);
     expect(result[0].name).toBe("Project A");
     expect(result[0].clientId).toBe(1);
+    expect(result[0].color).toBe("#ff0000");
+    expect(result[0].active).toBe(true);
   });
 
   it("timeTrackingClients queries tt_clients", async () => {
@@ -140,6 +150,7 @@ describe("Resolvers migrated to Postgres", () => {
     expect(queryLog.some((q) => q.sql.includes("tt_clients"))).toBe(true);
     expect(mockFetchToggl).not.toHaveBeenCalled();
     expect(result).toHaveLength(1);
+    expect(result[0].id).toBe(1);
     expect(result[0].name).toBe("Client A");
   });
 
@@ -153,6 +164,7 @@ describe("Resolvers migrated to Postgres", () => {
     expect(queryLog.some((q) => q.sql.includes("tt_tags"))).toBe(true);
     expect(mockFetchToggl).not.toHaveBeenCalled();
     expect(result).toHaveLength(1);
+    expect(result[0].id).toBe(1);
     expect(result[0].name).toBe("Tag A");
   });
 });
@@ -187,24 +199,45 @@ describe("Live resolvers unchanged", () => {
   });
 });
 
-// ── GraphQL schema updates ────────────────────────────────
+// ── Schema + resolver behavior verification ─────────────
 
-describe("GraphQL schema updates", () => {
-  it("TimeTrackingEntry.id is ID! (not Int)", async () => {
-    const { timeTrackingTypeDefs } = await import("../schema/time-tracking-types.js");
-    // Entry type should use ID! scalar for the id field
-    expect(timeTrackingTypeDefs).toMatch(/type TimeTrackingEntry\s*\{[^}]*id:\s*ID!/);
+describe("Schema fields produce correct resolver behavior", () => {
+  it("entry id is coerced to string (ID! scalar)", async () => {
+    const { ctx } = createMockCtx({
+      tt_entries: [{ id: 999, description: "", start: "2026-03-01T00:00:00Z", stop: null, seconds: 0, user_id: 1, project_id: null, tag_ids: null, billable: null }],
+    });
+
+    const result = await timeTrackingResolvers.Query.timeTrackingEntries(
+      null, { startDate: "2026-03-01", endDate: "2026-03-07" }, ctx,
+    );
+
+    expect(result[0].id).toBe("999");  // String, not number
+    expect(typeof result[0].id).toBe("string");
   });
 
-  it("TimeTrackingEntry includes billable field", async () => {
-    const { timeTrackingTypeDefs } = await import("../schema/time-tracking-types.js");
-    expect(timeTrackingTypeDefs).toMatch(/type TimeTrackingEntry\s*\{[^}]*billable:\s*Boolean/);
+  it("billable defaults to false when DB returns null", async () => {
+    const { ctx } = createMockCtx({
+      tt_entries: [{ id: 1, description: "", start: "2026-03-01T00:00:00Z", stop: null, seconds: 0, user_id: 1, project_id: null, tag_ids: null, billable: null }],
+    });
+
+    const result = await timeTrackingResolvers.Query.timeTrackingEntries(
+      null, { startDate: "2026-03-01", endDate: "2026-03-07" }, ctx,
+    );
+
+    expect(result[0].billable).toBe(false);
   });
 
-  it("timeTrackingEntries accepts limit and offset arguments", async () => {
-    const { timeTrackingTypeDefs } = await import("../schema/time-tracking-types.js");
-    expect(timeTrackingTypeDefs).toContain("limit: Int");
-    expect(timeTrackingTypeDefs).toContain("offset: Int");
+  it("null tag_ids defaults to empty array", async () => {
+    const { ctx } = createMockCtx({
+      tt_entries: [{ id: 1, description: "", start: "2026-03-01T00:00:00Z", stop: null, seconds: null, user_id: 1, project_id: null, tag_ids: null, billable: null }],
+    });
+
+    const result = await timeTrackingResolvers.Query.timeTrackingEntries(
+      null, { startDate: "2026-03-01", endDate: "2026-03-07" }, ctx,
+    );
+
+    expect(result[0].tagIds).toEqual([]);
+    expect(result[0].seconds).toBe(0);  // null seconds → 0
   });
 });
 

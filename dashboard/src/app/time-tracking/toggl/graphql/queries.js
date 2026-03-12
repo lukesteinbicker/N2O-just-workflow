@@ -86,8 +86,8 @@ export const TIME_TRACKING_CURRENT_TIMER = gql`
 `;
 
 export const TIME_TRACKING_ENTRIES = gql`
-  query TimeTrackingEntries($startDate: String!, $endDate: String!) {
-    timeTrackingEntries(startDate: $startDate, endDate: $endDate) {
+  query TimeTrackingEntries($startDate: String!, $endDate: String!, $limit: Int, $offset: Int) {
+    timeTrackingEntries(startDate: $startDate, endDate: $endDate, limit: $limit, offset: $offset) {
       id
       description
       start

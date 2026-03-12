@@ -1,5 +1,6 @@
-// Time tracking GraphQL resolvers — live API calls with rate limiting and caching.
-// Provider: Toggl Track (abstracted behind generic timeTracking* query names).
+// Time tracking GraphQL resolvers.
+// Synced data (entries, projects, clients, tags) reads from Postgres tt_* tables.
+// Live data (currentTimer, dashboardActivity, summary) still calls Toggl API.
 import type { Context } from "../context.js";
 import { queryAll, queryOne } from "../db-adapter.js";
 import { requireAdmin } from "../auth.js";
