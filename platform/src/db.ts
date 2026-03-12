@@ -29,6 +29,16 @@ function escapeParam(val: any): string {
   if (val === null || val === undefined) return "NULL";
   if (typeof val === "number") return String(val);
   if (typeof val === "boolean") return val ? "TRUE" : "FALSE";
+  if (Array.isArray(val)) {
+    const elements = val.map((v) => {
+      if (v === null || v === undefined) return "NULL";
+      if (typeof v === "number") return String(v);
+      // String elements: double-quote with backslash escaping
+      const s = String(v).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+      return `"${s}"`;
+    });
+    return `'{${elements.join(",")}}'`;
+  }
   // Escape single quotes by doubling them
   const str = String(val).replace(/'/g, "''");
   return `'${str}'`;
@@ -96,6 +106,10 @@ export class SupabasePool {
       return { rows: result };
     }
     throw new Error("Supabase query failed: max retries exceeded");
+  }
+
+  clearCache(): void {
+    this.cache.clear();
   }
 
   async end(): Promise<void> {
