@@ -706,13 +706,13 @@ for jsonl_file in "${JSONL_FILES[@]}"; do
       msg_out_tok=$(echo "$msg" | jq -r '.output_tokens // empty')
       msg_stop=$(echo "$msg" | jq -r '.stop_reason // empty')
 
-      # Escape single quotes for SQL (double-quote the pattern/replacement to avoid literal backslashes)
-      sql_content="${msg_content//"'"/"''"}"
-      model_val="NULL"; [[ -n "$msg_model" ]] && model_val="'${msg_model//"'"/"''"}'"
+      # Escape single quotes for SQL (use $'...' syntax for bash compatibility)
+      sql_content="${msg_content//\'/$'\'\''}"
+      model_val="NULL"; [[ -n "$msg_model" ]] && model_val="'${msg_model//\'/$'\'\''}'"
       msg_ts_val="NULL"; [[ -n "$msg_ts" ]] && msg_ts_val="'$msg_ts'"
       in_tok_val="NULL"; [[ -n "$msg_in_tok" ]] && in_tok_val="$msg_in_tok"
       out_tok_val="NULL"; [[ -n "$msg_out_tok" ]] && out_tok_val="$msg_out_tok"
-      stop_val="NULL"; [[ -n "$msg_stop" ]] && stop_val="'${msg_stop//"'"/"''"}'"
+      stop_val="NULL"; [[ -n "$msg_stop" ]] && stop_val="'${msg_stop//\'/$'\'\''}'"
 
       msg_sql+="INSERT OR REPLACE INTO messages (session_id, message_index, role, content, timestamp, model, input_tokens, output_tokens, stop_reason) VALUES ('$sql_session_id', $msg_idx, '$msg_role', '$sql_content', $msg_ts_val, $model_val, $in_tok_val, $out_tok_val, $stop_val);"
 
@@ -744,10 +744,10 @@ for jsonl_file in "${JSONL_FILES[@]}"; do
       ftc_input=$(echo "$ftc" | jq -c '.input // {}')
       ftc_ts=$(echo "$ftc" | jq -r '.timestamp // empty')
 
-      # Escape single quotes for SQL
-      sql_ftc_input="${ftc_input//"'"/"''"}"
-      sql_ftc_name="${ftc_tool_name//"'"/"''"}"
-      ftc_id_val="NULL"; [[ -n "$ftc_tool_use_id" ]] && ftc_id_val="'${ftc_tool_use_id//"'"/"''"}'"
+      # Escape single quotes for SQL (use $'...' syntax for bash compatibility)
+      sql_ftc_input="${ftc_input//\'/$'\'\''}"
+      sql_ftc_name="${ftc_tool_name//\'/$'\'\''}"
+      ftc_id_val="NULL"; [[ -n "$ftc_tool_use_id" ]] && ftc_id_val="'${ftc_tool_use_id//\'/$'\'\''}'"
       ftc_ts_val="NULL"; [[ -n "$ftc_ts" ]] && ftc_ts_val="'$ftc_ts'"
 
       tc_sql+="INSERT OR REPLACE INTO tool_calls (session_id, message_index, tool_index, tool_use_id, tool_name, input, timestamp) VALUES ('$sql_session_id', $ftc_msg_idx, $ftc_tool_idx, $ftc_id_val, '$sql_ftc_name', '$sql_ftc_input', $ftc_ts_val);"
