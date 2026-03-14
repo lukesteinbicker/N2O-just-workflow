@@ -79,5 +79,5 @@ Run `/detect-project` to auto-detect your theme tokens, spacing, and density con
 ## Related Skills
 
 - `/ux-heuristics` — 29 principle-based rules the vision agent applies
-- `/web-design-guidelines` — Vercel-style accessibility and design patterns
+- `/web-design-guidelines` — Accessibility and design patterns
 - `/detect-project` — Scans your codebase for UI conventions + generates Storybook stories

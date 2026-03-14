@@ -115,4 +115,4 @@ Rules in this file are intentionally principle-based. Project-specific pixel val
 - Findings are reported in `file:line rule-id severity — description` format.
 - To suppress a finding, add `<!-- ux-ignore rule-id -->` above the relevant JSX or `// ux-ignore rule-id` in the component.
 - Project-specific overrides in `.claude/ui-heuristics.md` take precedence over general rules when both apply.
-- This skill complements `web-design-guidelines`, which fetches Vercel's web interface guidelines. This skill is the N2O-specific heuristics layer.
+- This skill complements `web-design-guidelines`, which provides web interface guidelines. This skill is the N2O-specific heuristics layer.

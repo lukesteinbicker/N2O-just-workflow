@@ -742,7 +742,7 @@ CREATE TABLE sync_state (
 |------|-------------|-----------|
 | Set up Supabase project | Create project, configure auth | Can connect to database |
 | Implement schema | All tables, views, triggers | Schema deployed, migrations work |
-| Set up Next.js dashboard | Basic app structure, Supabase client | App deploys to Vercel |
+| Set up Next.js dashboard | Basic app structure, Supabase client | App builds and runs |
 | Board view (basic) | Kanban with task cards | Can view tasks by status |
 | Task claiming | Claim/release tasks | Two users can't claim same task |
 | Real-time updates | Supabase subscriptions | Changes appear without refresh |
@@ -787,7 +787,7 @@ CREATE TABLE sync_state (
 | Component | Choice | Rationale |
 |-----------|--------|-----------|
 | Database | Supabase (Postgres) | Free tier, real-time, auth built-in |
-| Hosting | Vercel | Free tier, instant deploys, edge functions |
+| Hosting | TBD | — |
 | Framework | Next.js 14+ | App router, server components, good DX |
 | Styling | Tailwind + shadcn/ui | Fast iteration, consistent design |
 | Charts | Recharts or Tremor | Simple, good defaults |

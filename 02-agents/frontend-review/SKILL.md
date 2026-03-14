@@ -655,5 +655,5 @@ Page-level uses structural DOM assertions (element visibility, counts, layout, a
 ---
 
 **Status**: ACTIVE
-**Related Skills**: `ux-heuristics` (general heuristics), `web-design-guidelines` (Vercel rules), `detect-project` (UI convention detection + story generation)
+**Related Skills**: `ux-heuristics` (general heuristics), `web-design-guidelines` (design rules), `detect-project` (UI convention detection + story generation)
 **Invoked By**: User, tdd-agent, pm-agent

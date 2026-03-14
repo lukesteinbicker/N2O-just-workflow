@@ -117,7 +117,3 @@ When adding or modifying rules:
 4. Add appropriate tags
 5. Run `pnpm build` to regenerate AGENTS.md and test-cases.json
 6. Rules are automatically sorted by title - no need to manage numbers!
-
-## Acknowledgments
-
-Originally created by [@shuding](https://x.com/shuding) at [Vercel](https://vercel.com).
