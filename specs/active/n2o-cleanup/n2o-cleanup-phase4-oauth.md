@@ -262,7 +262,7 @@ The Go CLI only makes standard HTTP requests — no better-auth SDK needed. The 
 
 1. **`n2o login`** — OAuth device flow against the app's API. Stores tokens in `~/.n2o/credentials.json`.
 2. **`n2o logout`** — Clears stored credentials.
-3. **`n2o status`** — Shows auth state, sync state (pending events, last sync, online/offline).
+3. **`n2o status`** — Shows auth state, sync state (pending events, last sync, online/offline). Phase 6 extends this to also show Claude setup token and GitHub token status.
 4. **`n2o sync`** — Flush pending events to remote, pull remote state into local DB.
 5. **`n2o apikey create --name "CI runner"`** — Generate a long-lived API key for the current project. Requires login. Always scoped to the project in `.pm/config.json` — no scope flag needed. Used for CI runners, async jobs, automation.
 6. **`n2o apikey list`** — List active API keys for this project (name, created date, last used). Does not show the key value after creation.
@@ -492,6 +492,7 @@ internal/
   auth/
     auth.go            (credential storage, token refresh)
     device.go          (OAuth device flow — RFC 8628)
+    warnings.go        (non-blocking auth status warnings — phase 6)
   api/
     client.go          (authenticated HTTP client)
     push.go            (POST events to remote API)
@@ -504,6 +505,7 @@ cmd/n2o/cmd/
   status.go
   sync.go              (flush + pull + --rebuild flag)
   apikey.go            (create, list, revoke)
+  auth.go              (auth claude/github/status — phase 6)
 ```
 
 > `internal/db/` and `internal/task/` are in phase 3 (Go CLI) and phase 5 (task commands) respectively.
@@ -703,19 +705,22 @@ Design details deferred. The key constraint is: the `task` table, `event` table,
 | `n2o sprint create --name X` | Create sprint | pm-agent |
 | `n2o sprint archive --name X` | Archive sprint (delete verified tasks) | pm-agent |
 
-### Phase 6 — Async / remote execution
+### Phase 6 — Auth + Async / remote execution
 
 | Command | What it does |
 |---------|-------------|
+| `n2o auth claude` | Run `claude setup-token`, store encrypted token for async jobs |
+| `n2o auth github` | Provision GitHub fine-grained PAT for async runner |
+| `n2o auth status` | Show auth state for all providers (Claude, GitHub, N2O) |
 | `n2o async "prompt"` | Submit prompt to run on remote compute |
 | `n2o async --file F.md` | Submit prompt from file |
+| `n2o async --status` | Show async infrastructure health + recent jobs |
 | `n2o async review --pr N` | Preset: PR review |
 | `n2o async sprint --sprint X` | Preset: sprint execution |
 | `n2o async health` | Preset: code health scan |
 | `n2o async list` | List async jobs with status |
 | `n2o async logs ID` | Stream/tail job logs |
 | `n2o async cancel ID` | Cancel a running job |
-| `n2o async result ID` | Show completed job output |
 
 ## Appendix: Local database schema (`.pm/workflow.db`)
 

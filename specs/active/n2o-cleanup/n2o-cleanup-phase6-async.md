@@ -21,20 +21,22 @@ n2o async --file review-checklist.md --pr 42
 n2o async --file overnight-sprint.md
 ```
 
-That's it. The runner clones the repo, installs Claude Code + N2O, feeds the prompt to `claude -p`, and delivers results. Everything else — PR review, sprint execution, code health — is just a preset prompt with convenience flags.
+That's it. The runner has the repo cloned, feeds the prompt to `claude -p`, and delivers results. Everything else — PR review, sprint execution, code health — is just a preset prompt with convenience flags.
 
 ### How it works
 
 1. User provides a prompt (inline string or `.md` file)
-2. CLI serializes: `{ prompt, repo, branch/PR, ref, env vars, result_delivery }`
-3. Runner picks up the job, clones repo, runs `claude -p "<prompt>"` with the repo as cwd
-4. Claude Code has full access to the codebase, `n2o` CLI, `gh` CLI, git — same as local
-5. Output is captured and delivered (PR comment, issue, webhook, or just stored for `n2o async result`)
+2. CLI serializes: `{ prompt, repo, branch/PR, ref, setup_token, github_token, env vars }` and enqueues the job to Upstash Redis (auth tokens were already provisioned at CLI startup — see Authentication)
+4. A Fly Machine keyed to `(repo, user)` picks up the job. If the machine is stopped, it auto-starts (sub-second). If it doesn't exist yet, it's created.
+5. The machine already has the repo cloned on its Volume (or clones it on first job, then caches). Subsequent jobs do `git fetch`.
+6. `claude -p` runs with the user's setup token (`CLAUDE_CODE_OAUTH_TOKEN`) — usage bills against the user's Max subscription, not API pricing.
+7. All work happens on a PR branch — the runner always creates or targets a pull request, never pushes directly to main.
+8. Output is captured and delivered as a PR comment.
 
 ### What the prompt can do
 
 Since the runner is just Claude Code in headless mode, the prompt can do anything a local session can:
-- Read/write files, run tests, commit, push
+- Read/write files, run tests, commit, push to PR branches
 - Use `n2o task *` commands
 - Use `gh pr comment`, `gh issue create`
 - Invoke N2O skills (`/code-health`, `/tdd-agent`, etc.)
@@ -42,12 +44,21 @@ Since the runner is just Claude Code in headless mode, the prompt can do anythin
 
 The prompt is the interface. The runner is just compute.
 
+### Guardrails
+
+- **PR-scoped**: All async work targets a pull request. The runner never pushes directly to protected branches.
+- **Time limit**: Jobs have a default wall-clock timeout of 30 minutes, configurable via `--timeout`. Maximum 2 hours.
+- **Turn limit**: `claude -p` is invoked with `--max-turns` (default 200, configurable via `--max-turns`). Prevents infinite loops.
+- **Permissions**: Runner uses `--dangerously-skip-permissions` since each Fly Machine is an isolated, ephemeral environment. PR-scoping + restricted GitHub token are the actual safety layer.
+- **Cost attribution**: Job events record the submitting user and prompt. Usage bills against the submitting user's Max subscription.
+
 ## What changes
 
-1. **`n2o async` command** — submit a prompt (inline or from file), list/cancel/inspect jobs.
-2. **Job runner infrastructure** — picks up jobs, spawns Claude Code in headless mode, streams results to storage.
-3. **Preset prompts** — built-in `.md` templates for common jobs (PR review, sprint exec, health scan). Convenience flags expand to prompts.
-4. **Result delivery** — configurable: PR comment, issue, webhook, or just stored.
+1. **`n2o async` command** — submit a prompt (inline or from file), list/cancel/inspect jobs. Blocks with clear error if auth tokens are missing (see Authentication).
+2. **Job queue (Upstash Redis)** — jobs are enqueued to Upstash Redis. Provides delivery guarantees, retry, deduplication, and job state tracking. The Go CLI uses the Upstash REST API (no native Redis driver needed).
+3. **Per-repo/user Fly Machines** — each `(repo, user)` pair gets a dedicated Fly Machine with a persistent Volume. The machine caches the git clone and the user's Claude credentials. Multiple jobs for the same repo/user land on the same machine and can run concurrently. Machines auto-stop when idle.
+4. **Preset prompts** — built-in `.md` templates for common jobs (PR review, sprint exec, health scan). Convenience flags expand to prompts.
+5. **Result delivery** — PR comment (primary), with job events synced to the task DB.
 
 ## Prompt interface
 
@@ -137,6 +148,24 @@ n2o async sprint --sprint auth --all-available
 # → ✓ Queued job jkl012 (preset: sprint, auth, 8 tasks)
 ```
 
+### `n2o async --status`
+
+Quick overview of async infrastructure health and recent jobs:
+
+```
+n2o async --status
+# Auth:     ✓ Claude connected (expires 2027-03-17)
+#           ✓ GitHub connected (expires 2026-12-01)
+# Machine:  ✓ Running (performance-2x, 4GB, repo: my-app)
+# Queue:    2 queued, 1 running, 14 completed today
+#
+# Recent:
+# ID       PROMPT                        STATUS    STARTED         DURATION
+# abc123   "Refactor the auth module..."  running   5m ago          —
+# def456   nightly-review.md (PR #42)    queued    —               —
+# ghi789   preset:review (PR #38)        done      2h ago          4m12s
+```
+
 ### `n2o async list`
 
 ```
@@ -162,60 +191,70 @@ n2o async logs abc123 --follow
 n2o async cancel abc123
 ```
 
-### `n2o async result`
-
-Show the final output of a completed job.
-
-```
-n2o async result abc123
-```
-
 ## Runner architecture
 
-The runner's job is simple: clone repo → `claude -p "<prompt>"` → capture output → deliver results.
+### Queue: Upstash Redis
 
-### Option A: GitHub Actions (simplest, start here)
+Jobs are enqueued to Upstash Redis via its REST API (no native Redis driver — works from the Go CLI and from Fly Machines without connection pooling concerns).
 
-Each job is a `repository_dispatch` event. The workflow is generic — it doesn't know about job types, it just runs the prompt.
+Job lifecycle: `queued` → `started` → `completed` | `failed` | `cancelled`
 
-```yaml
-# .github/workflows/n2o-async.yml
-on:
-  repository_dispatch:
-    types: [n2o-async-job]
+The queue provides:
+- **Delivery guarantees** — jobs aren't lost if the runner crashes; unacknowledged jobs are re-queued after a visibility timeout
+- **Deduplication** — optional idempotency key prevents duplicate jobs (e.g., same prompt + same PR = one job)
+- **Job state** — status, logs URL, and result are stored in Redis hashes, keyed by job ID
 
-jobs:
-  run:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.client_payload.ref }}
-      - name: Install Claude Code + N2O
-        run: |
-          npm install -g @anthropic-ai/claude-code
-          ./n2o setup && ./n2o sync
-      - name: Execute prompt
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          N2O_JOB_ID: ${{ github.event.client_payload.job_id }}
-        run: |
-          claude -p "${{ github.event.client_payload.prompt }}" \
-            --output-format json > /tmp/result.json
-          ./n2o runner deliver --job $N2O_JOB_ID --result /tmp/result.json
+### Compute: Per-repo/user Fly Machines
+
+Each `(repo, user)` pair gets a **dedicated, persistent Fly Machine** with an attached Volume. The machine is not ephemeral per-job — it stays alive across jobs, caching the git clone and credentials.
+
+```
+User A, repo X  →  Fly Machine A  (Volume: repo X clone + user A credentials)
+User A, repo Y  →  Fly Machine B  (Volume: repo Y clone + user A credentials)
+User B, repo X  →  Fly Machine C  (Volume: repo X clone + user B credentials)
 ```
 
-`n2o async` calls `gh api repos/:owner/:repo/dispatches` to trigger the workflow.
-`n2o async list/logs` wraps `gh run list` / `gh run view --log`.
+**Why per-repo/user:**
+- **Credentials isolation** — each user's Claude setup token stays on their own machine. No credential sharing or token races between users.
+- **Git clone caching** — the Volume persists the repo clone. After the first job, subsequent jobs do `git fetch` (~seconds) instead of full clone (~minutes).
+- **Concurrent jobs** — multiple jobs for the same repo/user run on the same machine. Multiple `claude -p` processes sharing the same credentials file on one machine is reliable (fixed in Claude Code v2.1.76+).
+- **No cross-machine token race** — the user's laptop and their Fly Machine use separate session credentials (laptop uses OAuth login, Fly Machine uses setup token).
 
-**Pros**: Zero infra to manage, free CI minutes on public repos, secrets managed by GitHub.
-**Cons**: Cold start (~30s), CI minute limits on private repos, prompt size limited by dispatch payload (64KB — fine for most prompts, for huge .md files the runner fetches from a URL or artifact).
+**Machine lifecycle:**
+1. First `n2o async` for a repo/user → machine is created via Fly Machines API, Volume attached
+2. Machine boots, clones repo to Volume, writes Claude credentials
+3. Job runs. Additional jobs for the same repo/user land on the same machine.
+4. Queue drains → machine idles → auto-stops after configurable timeout (default 10 minutes)
+5. Next job arrives → machine restarts (sub-second), Volume still has the cached clone + credentials
+6. Machine is only destroyed if explicitly removed via `n2o async cleanup`
 
-### Option B: Dedicated runner (future)
+**Machine spec:**
 
-A long-running process (`n2o runner serve`) that polls a job queue. Better for high-volume teams. Build when GitHub Actions becomes a bottleneck.
+| Resource | Spec | Cost |
+|---|---|---|
+| CPU/RAM | `performance-2x` (2 dedicated CPUs, 4GB RAM) | ~$0.09/hr while running |
+| Volume | 10GB (git clone + working dirs + cache) | $1.50/mo |
+| Idle (stopped) | Volume storage only | $1.50/mo |
 
-### Option C: Claude Agent SDK (future)
+Scale up to `performance-4x` (8GB) if jobs run heavy builds/tests concurrently.
+
+**Job execution on the machine:**
+
+1. Runner process polls Upstash Redis for jobs matching its `(repo, user)` key
+2. On new job: `git fetch && git checkout <ref>` (fast — clone already on Volume)
+3. Write prompt to temp file (avoids shell injection)
+4. Set `CLAUDE_CODE_OAUTH_TOKEN` from stored credentials + ensure `~/.claude.json` has `{"hasCompletedOnboarding": true}`
+5. Run `claude -p "$(cat /tmp/prompt.md)" --max-turns <N> --dangerously-skip-permissions --output-format json > /tmp/result.json`
+6. Run `n2o runner deliver --job $JOB_ID --result /tmp/result.json`
+7. Clean up working directory, keep the bare clone cache
+
+The prompt is **never interpolated into a shell command** — it's always read from a file.
+
+**Timeouts**: Each job has a wall-clock limit (default 30m, max 2h). If `claude -p` exceeds `--max-turns`, it exits gracefully. If the job hits the wall-clock limit, the process is killed and the job is marked `failed` with a timeout reason. The machine itself is not killed — it picks up the next job.
+
+**Disk management**: Each job works in an isolated directory (`/work/jobs/<job-id>/`). On completion, the working dir is cleaned up. The git clone cache (bare repo on Volume) persists. If Volume usage exceeds 80%, oldest job artifacts are evicted.
+
+### Future: Claude Agent SDK
 
 Custom runner using the Agent SDK — calls the API directly instead of shelling out to Claude Code CLI. Most efficient, but requires SDK maturity.
 
@@ -246,30 +285,103 @@ None of these are day-one problems. If they become real, Greptile could sit as a
 
 ## Authentication
 
-The runner needs two keys:
-- **`ANTHROPIC_API_KEY`** — for Claude Code API calls
-- **`N2O_API_KEY`** — project-scoped API key from `n2o apikey create --name "CI runner"` (see phase 4)
+Auth state is checked on every `n2o` CLI invocation and surfaced as **non-blocking warnings** beneath command output. Provisioning is explicit via `n2o auth` commands — the CLI never opens a browser without the user asking.
 
-The N2O API key is always project-scoped (inherits the project from `.pm/config.json`). Events pushed by the runner are attributed to the user who created the key. No OAuth device flow needed — the key is long-lived and headless.
+### Status warnings (non-blocking)
 
-For GitHub Actions, both keys are stored as repository secrets. For a dedicated runner, they go in environment variables or `~/.n2o/credentials.json`.
+The CLI displays persistent auth warnings beneath command output. These are **non-blocking** — all non-async commands work regardless of auth state. The user fixes auth when they're ready, not when the CLI forces them to.
 
 ```
-# Setup (one-time, from developer's machine)
+$ n2o task list
+  ID   TITLE                    STATUS      SPRINT
+  1    Add auth middleware       in_progress auth
+  2    Write login tests         available   auth
+  ...
+
+  ⚠ Claude: not connected — run `n2o auth claude` to enable async jobs
+  ⚠ GitHub: token expires in 5 days — run `n2o auth github` to renew
+```
+
+When everything is healthy, no warnings are shown — clean output. Warnings only appear when action is needed:
+
+| State | Warning |
+|-------|---------|
+| Claude setup token missing | `⚠ Claude: not connected — run n2o auth claude` |
+| Claude token expiring (<30 days) | `⚠ Claude: token expires in N days — run n2o auth claude` |
+| GitHub token missing | `⚠ GitHub: not connected — run n2o auth github` |
+| GitHub token expiring (<30 days) | `⚠ GitHub: token expires in N days — run n2o auth github` |
+| N2O session expired | `⚠ N2O: session expired — run n2o login` |
+| All healthy | *(no warnings shown)* |
+
+The check is fast (<50ms) — reads local token files and compares expiry dates. No network calls.
+
+### Auth commands
+
+```
+n2o auth claude     # runs `claude setup-token`, stores encrypted token
+n2o auth github     # runs `gh auth login` or renews existing token
+n2o auth status     # shows current auth state for all providers (Claude, GitHub, N2O)
+n2o login           # N2O account login (existing, from phase 4)
+```
+
+`n2o auth status` shows the same provider info that `n2o status` (phase 4) includes. `n2o status` is the superset — it also shows sync state, pending events, etc. `n2o auth status` is the focused view for just auth.
+
+### Blocking only on `n2o async`
+
+`n2o async` is the only command that **refuses to proceed** if required tokens are missing:
+
+```
+$ n2o async review --pr 42
+✗ Cannot submit async job:
+  • Claude setup token missing — run `n2o auth claude`
+  • GitHub token missing — run `n2o auth github`
+```
+
+It does not auto-provision — it tells you exactly what to run. The user stays in control. No surprise browser windows.
+
+### Token storage
+
+Tokens are stored locally at `~/.config/n2o/credentials/<repo-slug>/`:
+
+```
+~/.config/n2o/credentials/
+  my-org--my-repo/
+    claude-token.enc       # Claude setup token (encrypted)
+    github-token.enc       # GitHub fine-grained PAT (encrypted)
+```
+
+Encrypted with a key derived from the user's N2O credentials. Included in job payloads so the Fly Machine can use them.
+
+### Claude Code: setup token (Max subscription)
+
+`claude -p` in headless mode requires explicit credentials. `claude setup-token` generates a long-lived OAuth token (valid ~1 year, prefix `sk-ant-oat01-`) tied to the user's Max subscription. **Async jobs bill against the user's existing subscription — no separate API pricing.**
+
+The Fly Machine sets the token as `CLAUDE_CODE_OAUTH_TOKEN` + writes `{"hasCompletedOnboarding": true}` to `~/.claude.json` before running `claude -p`.
+
+### GitHub: fine-grained token
+
+The runner needs a GitHub token for `gh` CLI and git push. On provisioning, the CLI creates (or reuses) a fine-grained personal access token scoped to the target repo with permissions: `contents: write`, `pull-requests: write`, `issues: write`. No access to protected branches.
+
+If the user already has `gh` authenticated, the CLI can extract a token via `gh auth token`. Otherwise, it triggers `gh auth login` with the required scopes.
+
+### N2O API: project-scoped key
+
+The Fly Machine also needs an `N2O_API_KEY` for syncing events to the task DB. This is a long-lived, headless key from `n2o apikey create` (see phase 4). It's stored as a Fly Machine secret, shared across all machines for the project — not per-user.
+
+```
+# Setup (one-time, by project admin)
 n2o apikey create --name "async-runner"
 # → ✓ Created API key for project my-app: n2o_ak_...
-# → Store this key as N2O_API_KEY in your runner's secrets.
 ```
 
 ## Result delivery
 
 | Channel | When | What |
 |---------|------|------|
-| **PR comment** | PR review completes | Findings, grades, suggestions |
-| **Draft PR** | Sprint execution completes | All commits on work branch |
+| **PR comment** | Always | Findings, summary, or completion status posted to the target PR |
+| **Draft PR** | Sprint execution | All commits on a work branch, opened as draft PR |
 | **Task DB** | Always | Events: `job.queued`, `job.started`, `job.completed`, `job.failed` |
 | **Webhook** | If configured | JSON payload with job result summary |
-| **CLI** | On `n2o async result` | Formatted output of job results |
 
 ## Event additions
 
@@ -285,33 +397,43 @@ New events for the async system (sync to remote API):
 
 ## Interaction with existing phases
 
-- **Phase 3 (Go CLI)**: `n2o async` is a new Cobra command group. `n2o runner execute` is the entrypoint the runner calls.
-- **Phase 4 (OAuth)**: Jobs authenticate to the N2O API using the same OAuth tokens. Runner uses a service account or the submitting user's token.
+- **Phase 3 (Go CLI)**: `n2o async` is a new Cobra command group. `n2o runner execute` is the entrypoint the runner process calls.
+- **Phase 4 (OAuth/API keys)**: The runner uses a project-scoped `N2O_API_KEY` for task DB events. Claude Code authenticates via the submitting user's setup token (Max subscription).
 - **Phase 5 (task commands)**: The runner uses `n2o task *` commands — same codepath as local execution. No special-casing needed.
 
 ## Steps
 
-1. Implement `n2o async` — serialize prompt + context flags, trigger GitHub Actions via `gh api repos/:owner/:repo/dispatches`
-2. Implement `n2o async list` — wrap `gh run list` with N2O formatting
-3. Implement `n2o async logs` / `cancel` / `result` — wrap `gh run view`
-4. Create `.github/workflows/n2o-async.yml` — generic runner workflow template
-5. Implement `n2o runner deliver` — post results to configured delivery channels
-6. Write preset prompt templates: `templates/async/review.md`, `sprint.md`, `health.md`
-7. Implement `--file` flag — read `.md` file, inject context flags as prompt header
-8. Implement preset expansion — `n2o async review --pr 42` → load template + inject PR context
-9. Add job events to event catalog + schema
-10. Add `n2o init` template for the GitHub Actions workflow file (opt-in via `n2o setup --runner`)
-11. Add `.n2o/prompts/` convention for project-specific async prompt templates
+1. Set up Upstash Redis instance and configure access credentials
+2. Implement auth status warnings — on any `n2o` command, check local token files and display non-blocking warnings beneath output if tokens are missing/expiring
+3. Implement `n2o auth claude` / `n2o auth github` / `n2o auth status` — explicit auth provisioning commands
+4. Implement `n2o async` — serialize prompt + context flags + auth tokens, enqueue job to Upstash Redis via REST API. Block with clear error if tokens are missing.
+5. Implement `n2o async list` — query job state from Upstash Redis
+6. Implement `n2o async logs` / `cancel` — query/update job state in Redis
+7. Build runner Docker image (Claude Code + N2O + gh CLI pre-installed)
+8. Implement Fly Machine lifecycle management — create/start/stop machines keyed by `(repo, user)`, attach Volumes
+9. Implement `n2o runner execute` — poll queue, set up credentials, fetch repo, write prompt to file, run `claude -p`, deliver results
+10. Implement `n2o runner deliver` — post results as PR comment, update job state
+11. Implement disk management — git clone caching, job working dir cleanup, Volume usage monitoring
+12. Write preset prompt templates: `templates/async/review.md`, `sprint.md`, `health.md`
+13. Implement `--file` flag — read `.md` file, inject context flags as prompt header
+14. Implement preset expansion — `n2o async review --pr 42` → load template + inject PR context
+15. Add job events to event catalog + schema
+16. Add `.n2o/prompts/` convention for project-specific async prompt templates
 
 ## Files
 
 ### New
 ```
-cmd/n2o/cmd/async.go              (async submit/list/logs/cancel/result)
-cmd/n2o/cmd/runner.go             (runner deliver entrypoint)
-internal/async/job.go             (job serialization, dispatch to GitHub Actions)
-internal/async/deliver.go         (result delivery: PR comment, issue, webhook)
-templates/.github/workflows/n2o-async.yml
+cmd/n2o/cmd/auth.go               (auth claude/github/status commands)
+cmd/n2o/cmd/async.go              (async submit/list/logs/cancel)
+cmd/n2o/cmd/runner.go             (runner execute/deliver entrypoint)
+internal/auth/warnings.go         (startup auth check, non-blocking warning display)
+internal/async/queue.go           (Upstash Redis client — enqueue, dequeue, status)
+internal/async/job.go             (job serialization, payload types)
+internal/async/deliver.go         (result delivery: PR comment, webhook)
+internal/async/machines.go        (Fly Machines API — create/start/stop, keyed by repo+user)
+internal/async/credentials.go     (setup token provisioning, encryption, storage)
+Dockerfile.runner                 (runner image: Claude Code + N2O + gh CLI)
 templates/async/review.md         (preset: PR review prompt)
 templates/async/sprint.md         (preset: sprint execution prompt)
 templates/async/health.md         (preset: code health prompt)
@@ -326,23 +448,37 @@ specs/active/n2o-cleanup/workflow-events.md       (add job events)
 
 ## Verification
 
-- `n2o async queue review --pr 42` triggers a GitHub Actions run and returns a job ID
-- `n2o async list` shows the job with correct status
+- `n2o task list` with missing Claude token shows `⚠ Claude: not connected` warning beneath output — command still works
+- `n2o auth claude` runs `claude setup-token`, stores encrypted token, warning disappears on next command
+- `n2o auth github` provisions GitHub token, warning disappears
+- `n2o auth status` shows all provider states (connected/missing/expiring)
+- Token within 30 days of expiry shows renewal warning
+- No warnings shown when all tokens are healthy
+- Auth check is <50ms (local file reads only)
+- `n2o async --status` shows auth health, machine state, queue summary, and recent jobs
+- `n2o async review --pr 42` enqueues a job and returns a job ID
+- Fly Machine for `(repo, user)` is created on first job, reused on subsequent jobs
+- Stopped machine restarts in <1s when new job arrives
+- `n2o async list` shows the job with correct status (queued → started → completed)
 - `n2o async logs <id> --follow` streams runner output in real time
-- Runner clones repo, installs N2O, runs review agents, posts PR comment
+- Runner uses cached git clone (`git fetch` instead of full clone on subsequent jobs)
+- Claude Code authenticates via setup token — usage appears on user's Max subscription, not API billing
 - Sprint execution: runner claims tasks, runs tdd-agent, pushes commits, opens draft PR
 - Failed tasks are marked blocked — runner continues to next available task
 - All job events appear in task DB and sync to remote API
-- `n2o async result <id>` shows formatted output after completion
-- Works without N2O API login (GitHub Actions secrets handle auth independently)
+- Jobs that exceed `--max-turns` or wall-clock timeout are marked `failed` with reason
+- Duplicate submissions with the same idempotency key are rejected
+- Volume disk usage stays under control — old job artifacts evicted when >80% full
 
 ## Open questions
 
-- ~~Should async jobs use the submitting user's API key or a shared org key?~~ **Org key stored as GitHub secret.** Individual keys would leak across repos.
-- Should the runner commit directly to the PR branch or always create a new branch? Direct commit is simpler but riskier for open PRs.
-- How should the runner handle merge conflicts when multiple async sprint jobs run in parallel against the same branch?
-- Rate limiting: should there be a max concurrent jobs per org to prevent API cost surprises?
-- Should the GitHub Actions workflow be auto-installed by `n2o init`, or opt-in via `n2o setup --runner`?
-- **Prompt size limits**: GitHub `repository_dispatch` payload is 64KB. For large `.md` prompt files, should the runner fetch from a gist/artifact, or is 64KB always enough?
-- **Result format**: Should `claude -p` output be stored raw (JSON), or should `n2o runner deliver` parse and format it per delivery channel?
-- **Permissions**: The prompt can do anything Claude Code can (write files, push, create issues). Should there be a sandbox/allowlist for async prompts, or is "you wrote the prompt, you own the consequences" sufficient?
+- ~~Should async jobs use the submitting user's API key or a shared org key?~~ **User's own Max subscription via setup token.** No API pricing.
+- ~~Should the runner commit directly to the PR branch or always create a new branch?~~ **Always targets a PR.** All async work is PR-scoped.
+- ~~How should the runner handle merge conflicts when multiple async sprint jobs run in parallel against the same branch?~~ **Each job gets its own PR branch.** No branch collisions.
+- ~~Permissions: sandbox/allowlist for async prompts?~~ **PR-scoped + time/turn limits + `--dangerously-skip-permissions` in isolated VM.**
+- ~~Setup token renewal~~ **Proactive renewal at CLI startup when within 30 days of expiry.**
+- **Machine idle timeout**: How long should a Fly Machine stay alive after the queue drains? Longer = faster next job (no restart), shorter = lower cost. Default 10 minutes?
+- **Multi-user repos**: If User A and User B both submit jobs for the same repo, they get separate machines. Is this wasteful for the git clone, or is credential isolation worth the duplication?
+- **Upstash plan sizing**: What Upstash tier is needed for expected job volume? Free tier allows 10K commands/day — sufficient for early use?
+- ~~Startup auth latency~~ **Non-blocking warnings on all commands, explicit `n2o auth` commands for provisioning. Only `n2o async` blocks if tokens are missing.**
+- **Warning placement**: Warnings appear beneath command output. Should they also appear in `n2o async list` output, or only on commands that don't already show async-related info?
