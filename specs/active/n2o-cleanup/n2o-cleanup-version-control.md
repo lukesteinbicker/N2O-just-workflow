@@ -1,217 +1,311 @@
-# Version Control & Review Strategy for AI-Generated Changes
-> The PR is the gate. All agent work — local or async — produces a pull request that a human reviews before merge.
+# Unified Workflow & Version Control
+> One command (`/workflow`) enters a self-driving loop. Auto-routes, auto-chains, always outputs a PR. Normal Claude Code usage is unaffected.
 
-## Why this matters
+## Recent Changes
 
-Spotify's background coding agents ("Honk") have their LLM-as-Judge layer veto ~25% of agent sessions. Stripe ships 1,300+ fully autonomous PRs/week but enforces mandatory human review on every single one. Google's automated tooling generates 60%+ of all commits but routes them through tiered review.
+| Date | What changed |
+|------|-------------|
+| 2026-03-18 | v5: Judge runs as subagent (not same session). One PR per workflow run (not per task). Async robots use task DB same as interactive. Concrete routing algorithm. Cut phase logging entirely. Simplified phase 6 draft. No backwards compat. |
+| 2026-03-18 | v4: Single LLM judge (Spotify-style, pass/fail). Fixed cross-spec inconsistencies. |
+| 2026-03-18 | v3: One deterministic entry command (`/workflow`). Descriptive folder names. |
+| 2026-03-18 | v2: Merged version control + workflow unification. |
+| 2026-03-18 | v1: Initial version control spec. Removed — too many CLI commands. |
 
-The pattern is universal: **every company that ships AI code at scale gates it behind a pull request reviewed by a human**. No exceptions. The PR is the unit of trust.
+## Why
 
-Without this, N2O's parallel agent sessions and async runners produce unreviewed, unattributed changes that erode trust — the exact failure mode every industry leader has built against.
+**1. Named commands and manual handoffs don't work.** You type `/pm-agent` to plan, then `/tdd-agent` to implement, then `/bug-workflow` to debug. Nobody at Spotify, Stripe, or GitHub does this.
 
-## Current state
+**2. Async mode can't have manual handoffs.** When `n2o async` runs a prompt on remote compute, there's no human to type the next command. The loop must be self-driving.
 
-Today, tdd-agent commits directly to the working branch via `commit-task.sh`. There's no PR, no attribution of which model produced the change, no scope verification, and no standardized review gate. When async runners land (phase 6), this gets worse — remote agents pushing code nobody has reviewed.
+## Industry context
 
-## The model: PRs all the way down
+Every company shipping AI code at scale: **describe what you want → agent works → PR comes back → human reviews**.
 
-The version control strategy is the same whether you're running tdd-agent locally or kicking off `n2o async`:
+- **Spotify** (Honk): Slack message → agent works → PR. LLM-as-Judge vetoes 25% (scope creep).
+- **Stripe** (Minions): One-shot agents, deterministic gates, 2 CI cap. "The walls matter more than the model."
+- **GitHub Copilot Agent**: Assign issue to Copilot → draft PR comes back.
 
-```
-Agent does work → commits to a task branch → opens a PR → CI runs → human reviews → merge
-```
-
-That's it. The PR is where review happens. The commit trailers are how you know what produced the code. CI gates are what run before a human even looks at it. No new CLI commands for the user to learn — the existing workflow (`/tdd-agent`, `/pm-agent`) and async (`n2o async`) both funnel into the same PR-based review.
-
-### How this maps to local vs async
-
-| | Local (tdd-agent on your machine) | Async (n2o async on remote compute) |
-|---|---|---|
-| **Branch** | `task/{sprint}/{num}` off current branch | `task/{sprint}/{num}` off target branch |
-| **Commits** | Agent commits locally with trailers | Agent commits remotely with trailers |
-| **PR** | Opened when task reaches GREEN | Opened as draft PR by the runner |
-| **CI** | Runs on push | Runs on push (same) |
-| **Review** | You review before merging | You review before merging (same) |
-
-The only difference is where the compute happens. The review surface is identical.
+Key data: AI PRs have 1.7x more issues (CodeRabbit). 45% of AI code fails security tests, flat across model sizes (Veracode). Refactoring dropped from 25% to <10% with AI (GitClear).
 
 ## What changes
 
-### 1. Branch strategy
+### 1. One entry command: `/workflow`
+
+`/workflow` enters the structured loop. That's the only command. Once inside, the workflow auto-routes and auto-chains.
+
+**Outside `/workflow`**, Claude Code works normally.
+
+**In async mode**, the runner's prompt includes `/workflow` context automatically. The robot has its own task DB and follows the same workflow loop as interactive — just without pausing.
+
+### 2. Rename skills to descriptive folders
+
+| Old | New (in `skills/`) |
+|-----|-----|
+| `pm-agent/` | `plan/` |
+| `tdd-agent/` | `test/` |
+| `bug-workflow/` | `debug/` |
+| `code-health/` | `health/` |
+| `detect-project/` | `detect/` |
+| `frontend-review/` | `review/` |
+| `react-best-practices/` | `react/` |
+| `ux-heuristics/` | `ux/` |
+
+No backwards compatibility. Old names are deleted.
+
+### 3. The workflow loop
 
 ```
-main (protected)
- └── task/{sprint}/{num}    (one branch per task, created at COMMIT phase)
+PLAN → BREAK DOWN → IMPLEMENT (loop per task) → PR
+                        ↑              ↓
+                   DEBUG ←──── can't write failing test?
 ```
 
-- tdd-agent's COMMIT phase creates a task branch and opens a PR instead of committing to the current branch
-- Async runners do the same — they always work on a task branch
-- No agent pushes directly to main, ever
-- Optionally, teams can use a `sprint/{name}` integration branch and merge task PRs into that first — but it's not required
+### 4. Auto-routing algorithm
 
-### 2. Commit attribution
+On `/workflow` entry, the orchestrator runs this decision tree:
 
-Every agent commit includes trailers so you can trace what produced it:
+```
+1. Check conversation: did the user describe a feature/change/bug?
+   → YES and no spec file referenced → enter PLAN
+   → YES and spec file referenced    → go to step 2
 
+2. Query task DB: `n2o task available --sprint <current>`
+   → No sprint exists           → enter BREAK DOWN (user has a spec but no tasks)
+   → Available tasks returned   → enter IMPLEMENT (pick first available)
+   → All tasks green            → enter VERIFY (open PR, summarize, exit)
+   → All tasks blocked          → surface to human
+
+3. During IMPLEMENT, if RED phase fails after 2 attempts:
+   → enter DEBUG for the current task
+
+4. After DEBUG produces findings:
+   → return to IMPLEMENT for the same task with the findings as context
+```
+
+The "current sprint" is determined by: explicit user mention > most recent sprint with pending tasks > ask the user.
+
+**Spec detection**: the orchestrator checks `ls .pm/todo/*/` for markdown files. If the user references a spec by name or describes a feature that matches a spec filename, that's the active spec.
+
+### 5. Auto-chaining
+
+Phases flow automatically:
+- PLAN completes → BREAK DOWN starts
+- BREAK DOWN completes → IMPLEMENT starts
+- Task completes → commit to branch, pick next task
+- All tasks done → open PR, summarize, exit
+- Can't reproduce bug → DEBUG → findings → back to IMPLEMENT
+
+**Interactive pauses at 3 points:**
+1. After spec draft — "Does this look right?"
+2. After task breakdown — "Ready to implement?"
+3. On unrecoverable failure — "I'm stuck, here's what I tried"
+
+**Async pauses at 0 points.** Failures → mark task blocked, move to next.
+
+### 6. Quality gates: deterministic + LLM judge as subagent
+
+**Cut**: 3 parallel audit subagents, A-F grading, FIX_AUDIT loop, codification, phase logging, status tables.
+
+**Keep**:
+- TDD discipline (RED → GREEN → REFACTOR)
+- Deterministic gates from `.pm/config.json`: test, typecheck, lint, build
+- **One LLM judge** — runs as a **subagent** (not the same session) with only the diff + task `done_when` + task description as context. No memory of implementation decisions. Pass/fail: does the diff match the acceptance criteria and stay in scope?
+- 2-attempt cap on failures before marking blocked
+
+**Why a subagent?** The main session wrote the code — it can't objectively judge its own work. The subagent sees only the diff and the task definition, same as a human reviewer would. This mirrors Spotify's architecture where the judge is a separate evaluation pipeline.
+
+**On judge fail**: Interactive → surface reason, let human decide. Async → mark blocked, move to next.
+
+### 7. One PR per workflow run
+
+The workflow commits all tasks to a single branch and opens **one PR** at the end. Not one PR per task.
+
+**Branch**: `workflow/{sprint}` (or `async/<job-id>` for remote runs)
+
+**During the run**: each task gets a commit with trailers:
 ```
 feat(auth): implement token refresh
 
 Done-When: refresh token rotates on expiry and updates stored credential
 Task: auth/42
-Assisted-by: claude-opus-4-6 [tdd-agent]
+Assisted-by: claude-opus-4-6 [workflow]
 ```
 
-| Trailer | Purpose |
-|---------|---------|
-| `Task` | Links commit to the sprint task |
-| `Assisted-by` | Model and skills that produced the code (Linux kernel convention) |
-| `Done-When` | The acceptance criteria this commit satisfies |
+**At the end**: `gh pr create` with the PR template. The PR contains all commits from the workflow run. Reviewer sees one diff, one PR, with per-task commits for granularity.
 
-That's the full list. Simple enough that `commit-task.sh` (and later the Go equivalent) can generate it automatically from the task DB.
-
-### 3. PR template
-
-Every agent-opened PR uses a consistent template so the reviewer knows exactly what to look at:
-
+**PR template**:
 ```markdown
 ## What
-<!-- 1-2 sentences from task description -->
+<!-- 1-2 sentences: what this workflow run accomplished -->
 
-## Task
-<!-- sprint/task_num, link to spec if exists -->
+## Tasks completed
+<!-- list of sprint/task_num with done_when for each -->
 
 ## How to verify
-<!-- done_when criteria from the task, plus test results -->
+<!-- test results, done_when criteria -->
 
 ## Review focus
 <!-- 1-2 areas where human attention matters most -->
 ```
 
-This is a GitHub PR template, not a new command. It gets scaffolded into projects by `n2o init`.
+### 8. Refactoring budget
 
-### 4. CI as the quality gate
+Every sprint includes at least one `type=refactor` task. Enforced in `skills/plan/SKILL.md` during BREAK DOWN: the plan phase checks the task list before finishing and adds a refactor task if none exists.
 
-The existing CI pipeline is the gate — not new N2O commands. What matters is that the pipeline runs these checks before a human reviews:
+### 9. Code health is optional standalone
 
-1. **Lint + typecheck** — deterministic, fast
-2. **Tests** — the TDD suite the agent just wrote
-3. **Scope check** (optional, for teams that want it) — an LLM-as-Judge step in CI that compares the diff against the task's `done_when`. Catches the #1 failure mode Spotify identified: agent exceeding prompt scope.
+Not part of the main loop. Quality enforcement happens through deterministic gates + LLM judge.
 
-The scope check is a CI step, not a CLI command. Teams add it to their pipeline if they want it. It's a single script that reads the task from the DB and compares against the diff.
+## Skill architecture
 
-**CI iteration cap**: If CI fails twice on an agent PR, the PR is marked as needing human intervention (label or comment). The agent doesn't keep retrying — Stripe found "diminishing marginal returns if an LLM runs indefinitely."
+### The workflow SKILL.md is self-contained
 
-### 5. Refactoring budget
+`skills/workflow/SKILL.md` (~300 lines) contains ALL essential instructions inline:
+- Routing algorithm (section 4 above)
+- TDD cycle summary (RED → GREEN → REFACTOR → gates → judge → commit)
+- Quality gate commands
+- Version control procedures (branch, commit trailers, PR)
+- Interactive vs async behavior
 
-GitClear data shows refactoring dropped from 25% to <10% of changed lines with AI adoption. To counteract:
+The phase detail files (`skills/plan/SKILL.md`, `skills/test/SKILL.md`, `skills/debug/SKILL.md`) are **optional deep-dive references**. The orchestrator CAN Read() them for detailed instructions, but the critical path never depends on it. If Read() is skipped, the workflow still functions from the inline instructions.
 
-- pm-agent's SPRINT_PLANNING phase must include at least one `type=refactor` task per sprint
-- tdd-agent's REFACTOR phase (phase 4) remains mandatory — audit checks it wasn't skipped
+### Folder structure
 
-This is a policy change in the existing agents, not a new tool.
+```
+skills/
+├── workflow/SKILL.md        (orchestrator — /workflow entry point, self-contained)
+├── plan/SKILL.md            (detailed planning instructions, loaded as reference)
+├── test/SKILL.md            (detailed TDD instructions, loaded as reference)
+├── debug/SKILL.md           (detailed debug instructions, loaded as reference)
+├── health/SKILL.md          (optional standalone)
+├── detect/SKILL.md          (project detection)
+├── review/SKILL.md          (frontend review)
+├── react/SKILL.md           (ambient pattern)
+├── ux/SKILL.md              (ambient pattern)
+└── design/                  (micro-skills)
 
-## How async fits in
+.claude/skills/
+├── workflow -> ../../skills/workflow
+├── health -> ../../skills/health
+├── detect -> ../../skills/detect
+├── react -> ../../skills/react
+├── ux -> ../../skills/ux
+└── design -> ../../skills/design
+```
 
-Phase 6's `n2o async` already does the right thing — the runner works on a PR branch and posts results as PR comments. The version control strategy just codifies what async already assumes:
+`plan/`, `test/`, `debug/` are NOT symlinked — internal to the workflow.
 
-1. Runner clones repo, creates `task/{sprint}/{num}` branch
-2. Runs the prompt (tdd-agent, review, health scan, whatever)
-3. Commits with trailers, pushes, opens draft PR
-4. Human reviews the PR at their convenience
+### CLAUDE.md integration
 
-The async runner doesn't need special review commands. It produces PRs. You review PRs. Same as local.
+```markdown
+## Workflow
 
-## Industry research — why this works
+This project uses the N2O workflow system. Enter the structured loop with `/workflow`.
 
-### Spotify (650+ agent PRs/month merged)
-- **LLM-as-Judge vetoes ~25% of sessions** — most common trigger: agent exceeding prompt scope (unrelated refactoring, disabled tests, bonus features)
-- **Three failure modes by severity**: (1) agent fails to produce PR — acceptable; (2) PR fails CI — frustrating; (3) PR passes CI but is functionally wrong — trust-destroying
-- Agent self-corrects ~50% of the time after a veto
-- Agent access is deliberately limited: view code, edit files, run verifiers only
+Outside of `/workflow`, Claude Code works normally — ask questions, make edits, explore.
 
-### Stripe (1,300+ autonomous PRs/week, "The walls matter more than the model")
-- **Six-layer architecture**: deterministic orchestrator → scoped tool selection → isolated VM → pre-push lint → CI gating (max 2 runs) → mandatory human review
-- **Every PR gets human review**. No exceptions.
-- **2 CI attempt cap**, then escalate. "Diminishing marginal returns if an LLM runs indefinitely."
-- Years of investment in CI gates and structured tooling — not just better models
+Inside `/workflow`, the system auto-routes between phases (plan → implement → debug)
+based on context. No further commands needed. One PR is opened at the end.
 
-### Google (60%+ of commits from automated tools)
-- **Tiered review**: low-risk automated changes → designated "global approvers"; higher-risk → domain experts
-- **Rosie** shards large-scale changes into atomically submittable pieces based on ownership boundaries
-- **TAP** runs 1,000 random tests per change, then the full affected suite
+Pattern skills (react, design, ux) are ambient — consulted automatically during
+relevant work regardless of whether /workflow is active.
+```
 
-### Microsoft (600K+ PRs/month with AI review)
-- Author retains full control — must explicitly approve all AI suggestions
-- All changes attributed in commit history
-- Teams define repository-specific review prompts
+## Async: same workflow, same task DB
 
-### Linux kernel (most mature attribution model)
-- `Assisted-by: AGENT_NAME:MODEL_VERSION [TOOL1] [TOOL2]`
-- AI agents MUST NOT add `Signed-off-by` — only humans certify
-- Human submitter bears full responsibility
+The async runner's robot has its own task DB (scoped per `(robot_id, project_id)` — see phase 6). The robot follows the **exact same workflow** as interactive mode:
 
-### Key numbers
+1. Robot clones repo
+2. Workflow context injected from CLAUDE.md + `skills/workflow/SKILL.md`
+3. Robot uses `n2o task *` commands against its own local `workflow.db`
+4. Commits to branch, opens PR at the end
 
-| Finding | Source |
-|---------|--------|
-| AI PRs have 1.7x more issues than human PRs (10.83 vs 6.45) | CodeRabbit, 470 PRs |
-| 45% of AI code fails security tests — flat across model sizes | Veracode, 100+ LLMs |
-| Refactoring dropped from 25% to <10% of changed lines | GitClear, 211M lines |
-| Copy-pasted code at 4x baseline (8.3% → 12.3%) | GitClear |
-| 25% more AI adoption → 7.2% decrease in delivery stability | DORA 2024-2025 |
-| Year 2+ of unmanaged AI code: 4x maintenance cost | CISQ/Forrester |
+**Concurrency**: Jobs are self-contained — each gets its own branch, own ephemeral task DB, doesn't merge. Parallel runs are safe. The queue limits concurrent jobs per project (default: 3) to prevent cost spikes, not data conflicts.
+
+## Simplified phase 6 alternative
+
+The current phase 6 spec is comprehensive (Upstash Redis, Fly Machines, robot records, 9 subcommands). For v1, GitHub Actions with [`anthropics/claude-code-action`](https://github.com/anthropics/claude-code-action) achieves the same core primitive with far less infrastructure:
+
+```
+n2o async "implement the auth feature"
+```
+
+**What happens**:
+1. CLI calls `gh api repos/:owner/:repo/dispatches` with the prompt as payload
+2. A generic `.github/workflows/n2o-async.yml` fires
+3. Workflow uses `anthropics/claude-code-action` — Claude Code is pre-configured, no manual install
+4. `n2o` binary must be available in the runner. Options: (a) download a pre-built release binary in a setup step, (b) `go install` from source, or (c) check in a statically-linked binary to the repo. Release binary is simplest — add a `setup-n2o` step that curls the latest release from GitHub.
+5. Claude follows the workflow loop (plan → tasks → implement → PR)
+6. Robot's task DB lives in the runner's workspace (ephemeral, not synced)
+7. PR is the output. Job is done.
+
+**CLI surface**: `n2o async run`, `n2o async list` (wraps `gh run list`), `n2o async cancel` (wraps `gh run cancel`). Three commands.
+
+**n2o in the sandbox**: `claude-code-action` runs in a GitHub Actions runner (Ubuntu), not a custom Docker image. The `n2o` binary needs to be installed at runtime. The workflow template (shipped in `integrations/github/`) handles this:
+
+```yaml
+- name: Install n2o
+  run: |
+    curl -sL https://github.com/lukes/n2o/releases/latest/download/n2o-linux-amd64 -o /usr/local/bin/n2o
+    chmod +x /usr/local/bin/n2o
+    n2o init --non-interactive
+```
+
+This lives in `integrations/github/` alongside other GitHub-specific integration files (workflow templates, action configs).
+
+**Concurrency**: Jobs are self-contained — each robot works on its own branch, doesn't merge, and subsequent runs can't see prior changes until they're merged by a human. Parallel runs are fine. The main concern is cost — to prevent users from accidentally spinning up many concurrent jobs, add a `concurrency` group with a configurable max (default: 3 per repo):
+
+```yaml
+concurrency:
+  group: n2o-async-${{ github.repository }}
+  # GitHub Actions queues excess jobs automatically
+```
+
+**Tradeoffs vs full phase 6**:
+- No custom infra (Redis, Fly) — just GitHub Actions
+- Cold start ~30s vs ~3s (acceptable for async work)
+- CI minute limits on private repos
+- Prompt limited to 64KB dispatch payload (fine for most prompts)
+- No connected accounts model — `ANTHROPIC_API_KEY` as repo secret
+- `n2o` binary must be installed at runtime (release download, ~15MB, <5s)
+
+This is a "start here" option. The full Fly-based architecture from phase 6 can replace it later if GitHub Actions becomes a bottleneck.
 
 ## Steps
 
-1. Update tdd-agent COMMIT phase: create task branch, commit with trailers, open PR
-2. Add PR template to `templates/.github/PULL_REQUEST_TEMPLATE.md`
-3. Update `commit-task.sh` to include `Task`, `Assisted-by`, and `Done-When` trailers
-4. Add optional CI scope-check script to `templates/` (reads task from DB, compares against diff)
-5. Add refactoring task enforcement to pm-agent SPRINT_PLANNING
-6. Document branch naming convention in workflow-reference.md
+### During phase 2 (flatten + unify)
 
-## Files
+1. Rename folders: `pm-agent` → `plan`, `tdd-agent` → `test`, etc. Delete old names.
+2. Create `skills/workflow/SKILL.md` — self-contained orchestrator with routing, TDD cycle, gates, version control
+3. Simplify `skills/plan/SKILL.md` — extract from pm-agent, remove ceremony
+4. Simplify `skills/test/SKILL.md` — extract from tdd-agent, remove audit/codify/phase-logging
+5. Simplify `skills/debug/SKILL.md` — extract from bug-workflow
+6. Update `templates/CLAUDE.md` — `/workflow` description
+7. Create `templates/.github/PULL_REQUEST_TEMPLATE.md`
 
-### New
-```
-templates/.github/PULL_REQUEST_TEMPLATE.md       (PR template for agent PRs)
-templates/ci/scope-check.sh                      (optional CI step: diff vs done_when)
-```
+### During phase 3 (Go CLI)
 
-### Edit
-```
-02-agents/tdd-agent/SKILL.md                     (COMMIT phase: branch + PR + trailers)
-02-agents/pm-agent/SKILL.md                      (SPRINT_PLANNING: refactor task requirement)
-specs/active/n2o-cleanup/workflow-reference.md    (add version control section)
-```
+8. Add `Assisted-by` and `Done-When` trailers to `n2o commit`
 
 ## Verification
 
-- tdd-agent COMMIT phase creates `task/{sprint}/{num}` branch and opens a PR
-- Commits include `Task`, `Assisted-by`, and `Done-When` trailers
-- PR body matches template
-- Async runner produces identical PR structure to local tdd-agent
-- CI scope check (when enabled) catches an agent that modifies files outside its task
-- Every generated sprint contains at least one refactor task
-
-## Open questions
-
-- Should scope check be opt-in or default? It adds an LLM call to CI, which costs money and adds latency. Probably opt-in initially.
-- ~~What attribution format?~~ **Linux kernel's `Assisted-by` trailer.** Most mature, explicit about model + tools.
-- For teams that want auto-merge on low-risk PRs (test-only, docs, <50 lines): is a GitHub Actions rule with path/size filters sufficient, or does this need framework support?
+- `/workflow` enters the loop; normal usage without it is unaffected
+- Auto-routing: "plan auth" → PLAN; "pick next task" → IMPLEMENT; available tasks exist → IMPLEMENT
+- PLAN → auto-chains to BREAK DOWN → pauses for approval (interactive)
+- All tasks complete → one PR opened with all commits
+- LLM judge runs as subagent, only sees diff + task definition
+- Async mode: full loop runs, robot uses its own task DB, one PR at end
+- Concurrent jobs each get their own branch — no conflicts
+- Blocked tasks (2 gate failures) → marked blocked, next task picked
 
 ## Sources
 
 | Source | Key insight |
 |--------|------------|
-| [Spotify Background Coding Agent (Parts 1-3)](https://engineering.atspotify.com/2025/11/spotifys-background-coding-agent-part-1) | LLM-as-Judge vetoes 25%; scope creep is #1 failure mode |
-| [Stripe Minions (Part 2)](https://stripe.dev/blog/minions-stripes-one-shot-end-to-end-coding-agents-part-2) | "The walls matter more than the model"; 2 CI cap; mandatory human review |
-| [Google SWE Book (Ch. 19, 22)](https://abseil.io/resources/swe-book/html/ch22.html) | Tiered review; Rosie sharding; TAP random sampling |
-| [Microsoft AI Code Reviews](https://devblogs.microsoft.com/engineering-at-microsoft/enhancing-code-quality-at-scale-with-ai-powered-code-reviews/) | Author retains control; repo-specific prompts; 600K PRs/month |
-| [Linux Kernel Coding Assistants](https://docs.kernel.org/process/coding-assistants.html) | `Assisted-by` attribution; human responsibility |
-| [CodeRabbit AI vs Human Report](https://www.coderabbit.ai/blog/state-of-ai-vs-human-code-generation-report) | 1.7x more issues; 2.74x more security issues |
-| [Veracode GenAI Security](https://www.veracode.com/blog/genai-code-security-report/) | 45% security failure, flat across models |
-| [GitClear 2025](https://www.gitclear.com/ai_assistant_code_quality_2025_research) | Refactoring cratered; copy-paste 4x baseline |
-| [DORA 2024-2025](https://www.infoq.com/news/2025/11/ai-code-technical-debt/) | More AI → less stable delivery |
-| [Addy Osmani: Code Review + AI](https://addyo.substack.com/p/code-review-in-the-age-of-ai) | PR Contract framework |
-| [OCaml 13K-line PR Rejection](https://devclass.com/2025/11/27/ocaml-maintainers-reject-massive-ai-generated-pull-request/) | Reviewability limits are real |
+| [Spotify Honk](https://engineering.atspotify.com/2025/11/spotifys-background-coding-agent-part-1) | LLM-as-Judge vetoes 25% (scope creep), separate eval pipeline |
+| [Stripe Minions](https://stripe.dev/blog/minions-stripes-one-shot-end-to-end-coding-agents-part-2) | Deterministic gates, 2 CI cap, "walls > model" |
+| [GitHub Copilot Agent](https://github.blog/ai-and-ml/github-copilot/assigning-and-completing-issues-with-coding-agent-in-github-copilot/) | Issue assignment → draft PR |
+| [CodeRabbit](https://www.coderabbit.ai/blog/state-of-ai-vs-human-code-generation-report) | AI PRs: 1.7x more issues |
+| [Veracode](https://www.veracode.com/blog/genai-code-security-report/) | 45% security failure, flat across models |
+| [GitClear](https://www.gitclear.com/ai_assistant_code_quality_2025_research) | Refactoring cratered; copy-paste 4x baseline |
+| [Linux Kernel](https://docs.kernel.org/process/coding-assistants.html) | `Assisted-by` attribution |

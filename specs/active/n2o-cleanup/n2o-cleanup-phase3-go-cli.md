@@ -18,12 +18,12 @@
 | `init` | Medium | Scaffold `.pm/`, `.claude/`, templates into a project |
 | `sync` | High | Manifest-driven file sync with checksum protection |
 | `pin` | Low | Write version pin to project config |
-| `check` | Medium | Validate project health (tables, views, files, skill markers) |
+| `check` | Medium | Validate project infrastructure (tables, views, files exist, config valid, n2o on PATH) |
 | `stats` | Medium | Query SQLite for sprint/session/tool stats |
 | `version` | Low | Show or bump version, tag git |
 | `help` | Free | Cobra auto-generates this |
 
-> **Removed**: `migrate` — auto-runs on DB open, no standalone command needed. `lint skills` and `lint files` — absorbed into `n2o check` and `/code-health` skill.
+> **Removed**: `migrate` — auto-runs on DB open, no standalone command needed. `lint skills` and `lint files` — linting belongs in the `/code-health` workflow skill, not in the CLI.
 
 ## Scripts to absorb
 
@@ -33,8 +33,8 @@ After phase 1 deletes Supabase/coordination/transcript scripts, these survive:
 |--------|---------|-----|
 | `n2o-session-hook.sh` (12 KB) | Absorbed into CLI init | Context injection (developer name, concurrent sessions, git status) happens lazily on first `n2o` command per session. No dedicated hook command needed. |
 | `n2o-config.sh` (700 B) | `internal/config/` | Exports config vars. Becomes a Go package — no script needed. |
-| `lint-skills.sh` (7 KB) | Part of `n2o check` | Validates SKILL.md phase markers. Also available via `/code-health`. |
-| `lint-file-size.sh` (6 KB) | Part of `n2o check` | File size enforcement. Also available via `/code-health`. |
+| `lint-skills.sh` (7 KB) | `/code-health` only | Validates SKILL.md phase markers. Linting is a workflow concern, not a CLI concern. |
+| `lint-file-size.sh` (6 KB) | `/code-health` only | File size enforcement. Linting is a workflow concern, not a CLI concern. |
 | `sync-skill-versions.sh` (2 KB) | Part of `n2o sync` | Extracts SKILL.md frontmatter versions into DB. Runs as a sync post-step. |
 | `sync.sh` (1 KB) | Deleted | Thin wrapper around `n2o sync`. Redundant. |
 | `git/commit-task.sh` (unknown) | `n2o commit` | Task-aware git commit with conventional format. Shells out to `git` but all logic is in Go. |
@@ -90,9 +90,7 @@ internal/
   sync/
     sync.go            (file sync engine, diff, copy — absorbs sync.sh + sync-skill-versions.sh)
   check/
-    skills.go          (SKILL.md phase marker validation)
-    filesize.go        (file size enforcement)
-    health.go          (table/view/file existence checks)
+    health.go          (table/view/file existence, config validity, n2o on PATH)
   git/
     commit.go          (task-aware conventional commits)
   ui/
@@ -149,7 +147,7 @@ CLAUDE.md               (update CLI reference)
 
 - `go build ./cmd/n2o/` produces a working binary
 - All commands work: `n2o setup`, `init`, `sync`, `pin`, `check`, `stats`, `version`, `commit`
-- `n2o check` validates skill markers, file sizes, table existence, and project health
+- `n2o check` validates table existence, config, file presence, and project infrastructure (no linting — that's `/code-health`)
 - `n2o sync --dry-run` matches behavior of bash version
 - Auto-migration runs on first DB access (no standalone migrate command)
 - First `n2o` call in a session prints context info (developer, concurrent sessions, git status)

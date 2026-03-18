@@ -10,11 +10,12 @@ Read [workflow-reference.md](workflow-reference.md) first — it documents how t
 | Phase | Spec | What it does |
 |-------|------|-------------|
 | 1 | [n2o-cleanup-phase1-gutting.md](n2o-cleanup-phase1-gutting.md) | Delete Supabase, coordination scripts, test shell scripts, stale specs/docs |
-| 2 | [n2o-cleanup-phase2-flatten.md](n2o-cleanup-phase2-flatten.md) | Flatten skills into single directory, clean up manifest and CLAUDE.md |
+| 2 | [n2o-cleanup-phase2-flatten.md](n2o-cleanup-phase2-flatten.md) | Flatten skills into `skills/` with descriptive names, create unified `/workflow` entry point |
 | 3 | [n2o-cleanup-phase3-go-cli.md](n2o-cleanup-phase3-go-cli.md) | Rewrite `n2o` as a Go CLI with Cobra + Charmbracelet |
 | 4 | [n2o-cleanup-phase4-oauth.md](n2o-cleanup-phase4-oauth.md) | Add OAuth login + sync task data to/from external app API |
 | 5 | [n2o-cleanup-phase5-collect.md](n2o-cleanup-phase5-collect.md) | `n2o task *` commands replace raw SQL + lazy transcript parsing |
 | 6 | [n2o-cleanup-phase6-async.md](n2o-cleanup-phase6-async.md) | Async/overnight workflow: run agents on remote infra (PR review, sprint exec, code health) |
+| — | [n2o-cleanup-version-control.md](n2o-cleanup-version-control.md) | Unified workflow + version control: `/workflow` entry point, auto-routing, LLM judge, PRs as output |
 
 ## Ordering
 

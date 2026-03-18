@@ -23,13 +23,12 @@
 | `n2o task status --sprint X --task N --status red` | Change task status. Validates transition. | tdd-agent |
 | `n2o task block --sprint X --task N --reason "..."` | Mark task blocked with reason | tdd-agent |
 | `n2o task unblock --sprint X --task N` | Clear blocked status | pm-agent, CLI |
-| `n2o task audit --sprint X --task N --posture A [--pattern-notes "..."]` | Record audit results | tdd-agent |
-| `n2o task codify --sprint X --task N --notes "..."` | Record codification results. `--skip` to decline. | tdd-agent |
+| `n2o task judge --sprint X --task N --pass [--reason "..."]` | Record LLM judge result (pass/fail + reason) | workflow |
 | `n2o task commit --sprint X --task N --hash abc123` | Record commit hash, auto-compute line stats | tdd-agent |
 | `n2o task create --sprint X --title "..." [--type T] [--done-when "..."]` | Create a single task | pm-agent, bug-workflow, code-health |
 | `n2o task dep add --sprint X --task N --depends-on M` | Add dependency. Validates no cycles. | pm-agent |
 | `n2o task verify --sprint X --task N` | Mark task verified | pm-agent |
-| `n2o phase enter --phase RED --skill tdd-agent [--sprint X --task N]` | Log phase transition | All agents |
+| ~~`n2o phase enter`~~ | ~~Removed — phase logging cut. Transcript collection captures timing data.~~ | — |
 | `n2o sprint create --name X [--goal "..."] [--deadline DATE]` | Create sprint | pm-agent |
 | `n2o sprint archive --name X` | Delete verified tasks, mark sprint completed | pm-agent |
 
@@ -62,13 +61,11 @@
       "Bash(n2o task status *)",
       "Bash(n2o task block *)",
       "Bash(n2o task unblock *)",
-      "Bash(n2o task audit *)",
-      "Bash(n2o task codify *)",
+      "Bash(n2o task judge *)",
       "Bash(n2o task commit *)",
       "Bash(n2o task create *)",
       "Bash(n2o task dep *)",
       "Bash(n2o task verify *)",
-      "Bash(n2o phase enter *)",
       "Bash(n2o sprint create *)",
       "Bash(n2o sprint archive *)"
     ]
@@ -205,38 +202,33 @@ Registry defaults to `"claude-code"`. Configurable via `adapter` field in `~/.n2
 
 Every `sqlite3 .pm/workflow.db "..."` gets replaced with the corresponding `n2o` command.
 
-### tdd-agent
+### workflow (test phase — was tdd-agent)
 
 | Phase | Before (raw SQL) | After |
 |-------|-----------------|-------|
 | PICK | `SELECT ... FROM available_tasks` | `n2o task available --sprint X` |
 | PICK | `UPDATE tasks SET owner = ... WHERE owner IS NULL; SELECT changes();` | `n2o task claim --sprint X --task N` |
-| RED | `UPDATE tasks SET status = 'red' ...` + `INSERT INTO workflow_events ...` | `n2o task status ... --status red` + `n2o phase enter --phase RED ...` |
-| GREEN | `UPDATE tasks SET status = 'green' ...` + `INSERT INTO workflow_events ...` | `n2o task status ... --status green` + `n2o phase enter --phase GREEN ...` |
-| REFACTOR | `INSERT INTO workflow_events ...` | `n2o phase enter --phase REFACTOR ...` |
-| AUDIT | `UPDATE tasks SET tests_pass, testing_posture, ...` | `n2o task audit --posture A --pattern-notes "..."` |
-| CODIFY | `UPDATE tasks SET skills_updated, skills_update_notes ...` | `n2o task codify --notes "..."` |
+| RED | `UPDATE tasks SET status = 'red' ...` | `n2o task status ... --status red` |
+| GREEN | `UPDATE tasks SET status = 'green' ...` | `n2o task status ... --status green` |
 | COMMIT | (shells out to git) | `n2o task commit --hash $(git rev-parse HEAD)` |
 | ERROR | `UPDATE tasks SET status = 'blocked', blocked_reason = ...` | `n2o task block --reason "..."` |
 
-### pm-agent
+### workflow (plan phase — was pm-agent)
 
 | Phase | Before | After |
 |-------|--------|-------|
-| SPRINT_PLANNING | `INSERT INTO tasks (...) VALUES (...);` (bulk, repeated) | `n2o task create --sprint X --title "..." ...` (called per task) |
-| SPRINT_PLANNING | `INSERT INTO task_dependencies VALUES (...);` | `n2o task dep add --sprint X --task N --depends-on M` |
+| BREAK DOWN | `INSERT INTO tasks (...) VALUES (...);` (bulk, repeated) | `n2o task create --sprint X --title "..." ...` (called per task) |
+| BREAK DOWN | `INSERT INTO task_dependencies VALUES (...);` | `n2o task dep add --sprint X --task N --depends-on M` |
 | MONITOR | `INSERT INTO tasks (...) VALUES (...);` | `n2o task create --sprint X --title "..." ...` |
-| SPRINT_COMPLETION | `DELETE FROM tasks WHERE sprint = ? AND verified = TRUE;` | `n2o sprint archive --name X` |
-| All phases | `INSERT INTO workflow_events ...` | `n2o phase enter --phase IDEATION --skill pm-agent` |
+| COMPLETION | `DELETE FROM tasks WHERE sprint = ? AND verified = TRUE;` | `n2o sprint archive --name X` |
 
-### bug-workflow
+### workflow (debug phase — was bug-workflow)
 
 | Phase | Before | After |
 |-------|--------|-------|
-| All phases | `INSERT INTO workflow_events (... 'phase_entered' ...)` | `n2o phase enter --phase REPRODUCE --skill bug-workflow` |
 | TASK | `INSERT INTO tasks (...) VALUES (...);` | `n2o task create --sprint hotfix --title "..." --done-when "..."` |
 
-### code-health
+### health (optional standalone — was code-health)
 
 | Phase | Before | After |
 |-------|--------|-------|
@@ -256,8 +248,8 @@ No hooks. The first `n2o` command in a session handles everything:
 ## Steps
 
 1. Implement `internal/task/` package — validation, state machine, event generation
-2. Implement task Cobra commands: `list`, `available`, `claim`, `status`, `block`, `unblock`, `audit`, `codify`, `commit`, `create`, `dep`, `verify`
-3. Implement `n2o phase enter` Cobra command (sprint/task optional)
+2. Implement task Cobra commands: `list`, `available`, `claim`, `status`, `block`, `unblock`, `judge`, `commit`, `create`, `dep`, `verify`
+3. ~~`n2o phase enter` removed — phase logging cut~~
 4. Implement `n2o sprint create`, `archive` Cobra commands
 5. Implement auth-aware event push — check credentials, push if online, queue if offline, warn if logged out
 6. Implement "warn once per session" logic for logged-out state
@@ -267,10 +259,10 @@ No hooks. The first `n2o` command in a session handles everything:
 10. Add `--backfill` and `--reparse` flags to `n2o stats`
 11. Add `stat` and `event` tables to schema + migration, rename all tables to singular
 12. Update `n2o init` / `n2o sync` to write permission allowlist into `.claude/settings.json`
-13. Update tdd-agent SKILL.md — replace all raw SQL with `n2o` commands
-15. Update pm-agent SKILL.md — replace all raw SQL
-16. Update bug-workflow SKILL.md — replace all raw SQL
-17. Update code-health SKILL.md — replace all raw SQL
+13. Update `skills/test/SKILL.md` — replace all raw SQL with `n2o` commands
+15. Update `skills/plan/SKILL.md` — replace all raw SQL
+16. Update `skills/debug/SKILL.md` — replace all raw SQL
+17. Update `skills/health/SKILL.md` — replace all raw SQL
 18. Delete `scripts/collect-transcripts.sh` and `scripts/live-feed-hook.sh`
 
 ## Project structure additions
@@ -318,11 +310,11 @@ scripts/live-feed-hook.sh
 
 ### Edit
 ```
-skills/tdd-agent/SKILL.md             (replace raw SQL with n2o commands)
-skills/pm-agent/SKILL.md              (replace raw SQL with n2o commands)
-skills/bug-workflow/SKILL.md          (replace raw SQL with n2o commands)
-skills/code-health/SKILL.md           (replace raw SQL with n2o commands)
-  NOTE: paths assume phase 2 has run. If not, these are under 02-agents/.
+skills/test/SKILL.md                  (replace raw SQL with n2o commands)
+skills/plan/SKILL.md                  (replace raw SQL with n2o commands)
+skills/debug/SKILL.md                 (replace raw SQL with n2o commands)
+skills/health/SKILL.md                (replace raw SQL with n2o commands)
+  NOTE: paths assume phase 2 has run (descriptive rename). If not, these are under 02-agents/ with old names.
 .pm/schema.sql                        (rename tables to singular, add event + stat)
 .claude/settings.json                 (permission allowlist)
 ```
@@ -333,7 +325,7 @@ skills/code-health/SKILL.md           (replace raw SQL with n2o commands)
 - `n2o task claim` succeeds on unclaimed task, fails on already-claimed (exits non-zero, prints owner)
 - `n2o task status` validates transitions — pending→red ok, pending→green rejected
 - `n2o task status` detects reversions (green→red increments `reversions` column)
-- `n2o task audit` writes all audit columns atomically
+- `n2o task judge --pass` records pass result; `--no-pass --reason "..."` records failure
 - `n2o task create` creates task with all specified columns
 - `n2o task dep add` rejects cycles
 - `n2o task available` returns only unclaimed, unblocked tasks with met dependencies
@@ -352,9 +344,9 @@ skills/code-health/SKILL.md           (replace raw SQL with n2o commands)
 - Truncated JSONL files handled gracefully (skip last line)
 
 ### Agent integration
-- tdd-agent full cycle (claim → red → green → audit → codify → commit) uses only `n2o` commands
-- pm-agent sprint planning seeds tasks via repeated `n2o task create` calls
-- bug-workflow creates hotfix tasks via `n2o task create`
+- workflow test phase full cycle (claim → red → green → judge → commit) uses only `n2o` commands
+- workflow plan phase seeds tasks via repeated `n2o task create` calls
+- workflow debug phase creates hotfix tasks via `n2o task create`
 - No `sqlite3 .pm/workflow.db` commands remain in any SKILL.md
 - All `n2o task *` / `n2o phase *` commands auto-approved (no user prompt)
 

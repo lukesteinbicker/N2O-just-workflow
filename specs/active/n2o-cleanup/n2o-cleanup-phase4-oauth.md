@@ -262,7 +262,7 @@ The Go CLI only makes standard HTTP requests — no better-auth SDK needed. The 
 
 1. **`n2o login`** — OAuth device flow against the app's API. Stores tokens in `~/.n2o/credentials.json`.
 2. **`n2o logout`** — Clears stored credentials.
-3. **`n2o status`** — Shows auth state, sync state (pending events, last sync, online/offline). Phase 6 extends this to also show Claude setup token and GitHub token status.
+3. **`n2o status`** — Shows auth state, sync state (pending events, last sync, online/offline). Phase 6 extends this to also show connected account status (Claude, GitHub) fetched from the API.
 4. **`n2o sync`** — Flush pending events to remote, pull remote state into local DB.
 5. **`n2o apikey create --name "CI runner"`** — Generate a long-lived API key for the current project. Requires login. Always scoped to the project in `.pm/config.json` — no scope flag needed. Used for CI runners, async jobs, automation.
 6. **`n2o apikey list`** — List active API keys for this project (name, created date, last used). Does not show the key value after creation.
@@ -492,7 +492,7 @@ internal/
   auth/
     auth.go            (credential storage, token refresh)
     device.go          (OAuth device flow — RFC 8628)
-    warnings.go        (non-blocking auth status warnings — phase 6)
+    warnings.go        (non-blocking auth status warnings via API — phase 6)
   api/
     client.go          (authenticated HTTP client)
     push.go            (POST events to remote API)
@@ -505,7 +505,7 @@ cmd/n2o/cmd/
   status.go
   sync.go              (flush + pull + --rebuild flag)
   apikey.go            (create, list, revoke)
-  auth.go              (auth claude/github/status — phase 6)
+  auth.go              (auth claude/github/status — connected accounts via API, phase 6)
 ```
 
 > `internal/db/` and `internal/task/` are in phase 3 (Go CLI) and phase 5 (task commands) respectively.
@@ -568,6 +568,27 @@ POST   /api/tinybird/jwt                   — Mint Tinybird JWT for authenticat
 ```
 
 Every endpoint validates the bearer token via `auth.api.getSession({ headers })` before processing.
+
+### Added by phase 6 (connected accounts + async infrastructure)
+
+```
+POST   /api/projects/:id/integrations/ai/anthropic    — Store Anthropic API key (project-level, admin only)
+POST   /api/me/integrations/git/github               — Store GitHub PAT (per-user connected account)
+GET    /api/me/integrations                           — List connected accounts with status/expiry
+DELETE /api/projects/:id/integrations/ai/anthropic    — Remove Anthropic API key (project-level, admin only)
+DELETE /api/me/integrations/git/github                — Disconnect GitHub (per-user)
+GET    /api/me/integrations/git/github/token          — Decrypted GitHub token (N2O_API_KEY auth only)
+
+POST   /api/projects/:id/async/jobs                  — Submit async job (create robot if first run, spin up Fly Machine)
+GET    /api/projects/:id/async/jobs                  — List jobs
+GET    /api/projects/:id/async/jobs/:job_id          — Job details
+DELETE /api/projects/:id/async/jobs/:job_id          — Cancel/remove job (destroys machine if running)
+POST   /api/projects/:id/async/jobs/:job_id/rerun    — Rerun failed job
+GET    /api/projects/:id/async/jobs/:job_id/logs     — Proxy Fly log stream for this job's machine (WebSocket/SSE)
+GET    /api/projects/:id/async/status                — Aggregate dashboard data
+```
+
+See [phase 6 credential strategy](n2o-cleanup-phase6-credentials.md) and [phase 6 async spec](n2o-cleanup-phase6-async.md) for full details.
 
 ## Open questions
 
@@ -663,7 +684,7 @@ Design details deferred. The key constraint is: the `task` table, `event` table,
 | `n2o init` | Scaffold project: copy skills, schema, create DB, write allowlist |
 | `n2o sync` | Push framework updates into project (manifest-driven, checksum-protected) |
 | `n2o pin` | Write version pin to project config |
-| `n2o check` | Validate project health (tables, views, files, skill markers, file sizes, n2o on PATH) |
+| `n2o check` | Validate project infrastructure (tables, views, files exist, config valid, n2o on PATH) |
 | `n2o stats` | Query local DB for sprint/session/tool stats |
 | `n2o version` | Show or bump version, tag git |
 | `n2o commit` | Task-aware conventional commit |
@@ -709,18 +730,22 @@ Design details deferred. The key constraint is: the `task` table, `event` table,
 
 | Command | What it does |
 |---------|-------------|
-| `n2o auth claude` | Run `claude setup-token`, store encrypted token for async jobs |
-| `n2o auth github` | Provision GitHub fine-grained PAT for async runner |
-| `n2o auth status` | Show auth state for all providers (Claude, GitHub, N2O) |
-| `n2o async "prompt"` | Submit prompt to run on remote compute |
-| `n2o async --file F.md` | Submit prompt from file |
-| `n2o async --status` | Show async infrastructure health + recent jobs |
-| `n2o async review --pr N` | Preset: PR review |
-| `n2o async sprint --sprint X` | Preset: sprint execution |
-| `n2o async health` | Preset: code health scan |
-| `n2o async list` | List async jobs with status |
-| `n2o async logs ID` | Stream/tail job logs |
-| `n2o async cancel ID` | Cancel a running job |
+| `n2o auth anthropic` | Store Anthropic API key via N2O API (project-level) |
+| `n2o auth github` | Connect GitHub account to N2O (stores PAT via API, per-user) |
+| `n2o auth status` | Show connected account status for all providers |
+| `n2o async run "prompt"` | Submit prompt with confirmation UI (skip with `-y`) |
+| `n2o async run --file F.md` | Submit prompt from file |
+| `n2o async run review --pr N` | Preset: PR review |
+| `n2o async run sprint --sprint X` | Preset: sprint execution |
+| `n2o async run health` | Preset: code health scan |
+| `n2o async status` | Dashboard: auth, machine, queue, and history |
+| `n2o async list` | List jobs (filterable: `--status`, `--today`, `--all`) |
+| `n2o async view ID` | Detailed single-job view with timeline |
+| `n2o async watch ID` | Live-stream running job progress |
+| `n2o async logs ID` | Static log dump of completed job |
+| `n2o async cancel ID` | Cancel a running or queued job |
+| `n2o async rm ID` | Remove a queued job (before it starts) |
+| `n2o async rerun ID` | Re-submit a failed job with same defaults |
 
 ## Appendix: Local database schema (`.pm/workflow.db`)
 
@@ -806,7 +831,11 @@ migration (name, applied_at, framework_version, checksum)
 | `sprint.created` | sprint name, goal, deadline | `n2o sprint create` |
 | `sprint.archived` | sprint name, stats | `n2o sprint archive` |
 | `phase.entered` | sprint, task_num, phase, skill | `n2o phase enter` |
-| `job.queued` | job_id, prompt, target | `n2o async` (phase 6) |
-| `job.started` | job_id, runner_id | Runner (phase 6) |
-| `job.completed` | job_id, duration, results | Runner (phase 6) |
-| `job.failed` | job_id, error | Runner (phase 6) |
+| `job.queued` | job_id, job_type, target, submitted_by, position | `n2o async run` (phase 6) |
+| `job.started` | job_id, runner_id, started_at | Runner (phase 6) |
+| `job.progress` | job_id, phase, detail | Runner (phase 6) |
+| `job.completed` | job_id, duration_seconds, tasks_completed, tasks_failed, pr_url | Runner (phase 6) |
+| `job.failed` | job_id, error, failed_at | Runner (phase 6) |
+| `job.cancelled` | job_id, cancelled_by | `n2o async cancel` (phase 6) |
+| `job.removed` | job_id, removed_by | `n2o async rm` (phase 6) |
+| `job.retried` | job_id, original_job_id, changes | `n2o async rerun` (phase 6) |

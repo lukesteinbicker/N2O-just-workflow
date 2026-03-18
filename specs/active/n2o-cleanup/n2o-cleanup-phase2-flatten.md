@@ -1,5 +1,5 @@
-# Phase 2: Flatten skills and simplify structure
-> Consolidate `02-agents/`, `03-patterns/`, and `.claude/skills/design/` into a single `skills/` directory. Update the manifest-driven sync to match.
+# Phase 2: Flatten skills, rename to descriptive names, unify workflow
+> Consolidate `02-agents/`, `03-patterns/`, and `.claude/skills/design/` into a single `skills/` directory with descriptive folder names. Create unified `/workflow` entry point. See also [n2o-cleanup-version-control.md](n2o-cleanup-version-control.md) for the full workflow + version control spec.
 
 ## How things work today
 
@@ -41,35 +41,37 @@ Framework repo                          Target project
 
 ## Impact on target projects
 
-**None.** Target projects receive skills into `.claude/skills/` regardless of where they live in the framework repo. The destination path doesn't change — only the source path in the framework repo changes. The next `n2o sync` after this change will work identically; checksums will match because file contents haven't changed.
+**Breaking change — no backwards compatibility.** Old skill names (`pm-agent`, `tdd-agent`, etc.) are deleted. Existing projects run `n2o sync` and get the new names. Old skill dirs in `.claude/skills/` become orphans — users delete them manually or ignore them (harmless).
 
 ## Steps
 
 1. Create `skills/` at repo root
-2. Move each skill directory:
-   - `02-agents/pm-agent/` → `skills/pm-agent/`
-   - `02-agents/tdd-agent/` → `skills/tdd-agent/`
-   - `02-agents/bug-workflow/` → `skills/bug-workflow/`
-   - `02-agents/code-health/` → `skills/code-health/`
-   - `02-agents/frontend-review/` → `skills/frontend-review/`
-   - `02-agents/detect-project/` → `skills/detect-project/`
-   - `03-patterns/react-best-practices/` → `skills/react-best-practices/`
-   - `03-patterns/ux-heuristics/` → `skills/ux-heuristics/`
+2. Move each skill directory with descriptive rename:
+   - `02-agents/pm-agent/` → `skills/plan/`
+   - `02-agents/tdd-agent/` → `skills/test/`
+   - `02-agents/bug-workflow/` → `skills/debug/`
+   - `02-agents/code-health/` → `skills/health/`
+   - `02-agents/frontend-review/` → `skills/review/`
+   - `02-agents/detect-project/` → `skills/detect/`
+   - `03-patterns/react-best-practices/` → `skills/react/`
+   - `03-patterns/ux-heuristics/` → `skills/ux/`
    - `.claude/skills/design/` → `skills/design/`
-3. Delete `02-agents/`, `03-patterns/`
-4. Recreate `.claude/skills/` symlinks pointing to `../../skills/*`
-5. Update `n2o-manifest.json`:
+3. Create `skills/workflow/SKILL.md` — unified entry point (see [version-control spec](n2o-cleanup-version-control.md))
+4. Delete `02-agents/`, `03-patterns/`
+5. Recreate `.claude/skills/` symlinks pointing to `../../skills/*` (only user-facing skills — `plan/`, `test/`, `debug/` are internal to workflow, not symlinked)
+6. Update `n2o-manifest.json`:
    ```diff
    - "02-agents/**",
    - "03-patterns/**",
    + "skills/**",
    ```
-6. Update `n2o` script — grep for `02-agents` and `03-patterns` in sync logic, replace with `skills`
-7. Update `scripts/lint-skills.sh` — change scan paths
-8. Update `scripts/sync-skill-versions.sh` — change scan paths
-9. Update `CLAUDE.md` skill path references
-10. Consolidate `01-getting-started/` into `docs/` (1-2 files)
-11. Delete empty `03-patterns/web-design-guidelines/`, remove stale references
+7. Update `n2o` script — grep for `02-agents` and `03-patterns` in sync logic, replace with `skills`
+8. Update `scripts/lint-skills.sh` — change scan paths and skill names
+9. Update `scripts/sync-skill-versions.sh` — change scan paths
+10. Update `CLAUDE.md` skill path references
+11. Consolidate `01-getting-started/` into `docs/` (1-2 files)
+12. Delete empty `03-patterns/web-design-guidelines/`, remove stale references
+13. Rewrite SKILL.md files for `plan/`, `test/`, `debug/` — simplify per [version-control spec](n2o-cleanup-version-control.md) (cut audit subagents, codify, phase logging)
 
 ## Files
 
@@ -79,11 +81,17 @@ skills/                        (new canonical skill source directory)
 docs/                          (consolidated getting-started docs)
 ```
 
-### Move
+### Move (with rename)
 ```
-02-agents/*           → skills/*
-03-patterns/*         → skills/*
-.claude/skills/design → skills/design
+02-agents/pm-agent           → skills/plan
+02-agents/tdd-agent          → skills/test
+02-agents/bug-workflow       → skills/debug
+02-agents/code-health        → skills/health
+02-agents/frontend-review    → skills/review
+02-agents/detect-project     → skills/detect
+03-patterns/react-best-practices → skills/react
+03-patterns/ux-heuristics    → skills/ux
+.claude/skills/design        → skills/design
 ```
 
 ### Delete
@@ -107,9 +115,10 @@ CLAUDE.md                      (skill path references)
 
 ## Verification
 
-- `ls skills/*/SKILL.md` lists all 8+ skills
+- `ls skills/*/SKILL.md` lists all skills with descriptive names (plan, test, debug, health, etc.)
 - All `.claude/skills/` symlinks resolve: `find .claude/skills -type l -not -exec test -e {} \; -print` returns nothing
 - `n2o sync` into a test project still copies skills correctly
 - `scripts/lint-skills.sh` passes
 - `scripts/sync-skill-versions.sh` extracts versions from new paths
 - No references to `02-agents` or `03-patterns` remain outside git history and specs/done
+- `/workflow` loads the unified orchestrator; `plan/`, `test/`, `debug/` are not directly invocable

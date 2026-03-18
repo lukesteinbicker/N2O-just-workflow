@@ -7,12 +7,15 @@ N2O is a **framework source repo** that syncs into target projects. It is not us
 
 ```
 N2O-just-workflow (this repo)          Target project (e.g. my-app)
-├── skills/pm-agent/SKILL.md           ├── .claude/skills/pm-agent/SKILL.md  (copied)
-├── skills/react.../SKILL.md           ├── .claude/skills/react.../SKILL.md  (copied)
+├── skills/workflow/SKILL.md           ├── .claude/skills/workflow/SKILL.md  (copied)
+├── skills/plan/SKILL.md              ├── .claude/skills/plan/SKILL.md      (internal, loaded by workflow)
+├── skills/test/SKILL.md              ├── .claude/skills/test/SKILL.md      (internal, loaded by workflow)
+├── skills/debug/SKILL.md             ├── .claude/skills/debug/SKILL.md     (internal, loaded by workflow)
+├── skills/react/SKILL.md             ├── .claude/skills/react/SKILL.md     (ambient)
 ├── .pm/schema.sql                     ├── .pm/schema.sql                    (copied)
 ├── .pm/migrations/                    ├── .pm/migrations/                   (copied)
 ├── templates/                         │
-├── n2o (Go binary)                    ├── .pm/workflow.db                      (project-owned)
+├── n2o (Go binary)                    ├── .pm/workflow.db                   (project-owned)
 └── n2o-manifest.json                  ├── .pm/config.json                   (project-owned)
                                        └── CLAUDE.md                         (project-owned)
 ```
@@ -25,7 +28,7 @@ N2O-just-workflow (this repo)          Target project (e.g. my-app)
 
 `n2o-manifest.json` declares what's framework-owned vs project-owned:
 
-- **Framework files** (`02-agents/**`, `03-patterns/**`, `.pm/schema.sql`, `.pm/migrations/**`, `scripts/**`): Copied into projects by `n2o sync`. Can be updated on subsequent syncs.
+- **Framework files** (`skills/**`, `.pm/schema.sql`, `.pm/migrations/**`): Copied into projects by `n2o sync`. Can be updated on subsequent syncs.
 - **Project files** (`.pm/config.json`, `.pm/workflow.db`, `CLAUDE.md`, `.pm/schema-extensions.sql`): Never touched by sync. Scaffolded once by `n2o init` from `templates/`.
 
 **Checksum protection**: Skills are MD5-checksummed on sync. If a project has locally modified a SKILL.md, sync skips it (unless `--force`). Checksums stored in `.pm/.skill-checksums.json`.
@@ -34,100 +37,69 @@ N2O-just-workflow (this repo)          Target project (e.g. my-app)
 
 ```
 n2o setup     →  Configure ~/.n2o/config.json (framework path, developer name)
-n2o init      →  Scaffold project: copy skills, schema, scripts, create .pm/workflow.db
+n2o init      →  Scaffold project: copy skills, schema, create .pm/workflow.db
 n2o sync      →  Push framework updates into project (checksum-protected)
-Session hook  →  On Claude Code session start: auto-sync if enabled, inject context
 ```
 
-## The three core agents
+No session hooks. The first `n2o` command per session handles context injection, auth check, event flush, and transcript parsing lazily.
+
+## The unified workflow
+
+One entry command — `/workflow` — enters a self-driving loop. No named agents to invoke.
 
 ```
-pm-agent (planning)  ──creates tasks──▸  tdd-agent (implementation)
-                                              │
-                                         bug found?
-                                              │
-                                         bug-workflow (debugging)
-                                              │
-                                         creates hotfix task
-                                              │
-                                         tdd-agent (fix)
+PLAN → BREAK DOWN → IMPLEMENT (loop per task) → PR
+                        ↑              ↓
+                   DEBUG ←──── can't write failing test?
 ```
 
----
+The workflow auto-routes based on state (task DB + conversation context) and auto-chains between phases. See [n2o-cleanup-version-control.md](n2o-cleanup-version-control.md) for the full spec.
 
-## PM-Agent phases
+### Phase details
 
-Drives planning from idea to sprint-ready task database.
+| Phase | Skill file | What happens |
+|-------|-----------|-------------|
+| PLAN | `skills/plan/SKILL.md` | Capture idea, research codebase, write spec, adversarial review |
+| BREAK DOWN | `skills/plan/SKILL.md` | Break spec into tasks, seed `.pm/workflow.db`, validate dependencies |
+| IMPLEMENT | `skills/test/SKILL.md` | Pick task → RED → GREEN → REFACTOR → quality gates → commit → PR → loop |
+| DEBUG | `skills/debug/SKILL.md` | Reproduce bug, investigate root cause, update task with findings, return to IMPLEMENT |
 
-| # | Phase | What happens |
-|---|-------|-------------|
-| 1 | IDEATION | Capture ideas in `.wm/` (scratch) or `.pm/backlog/` (persistent) |
-| 1.5 | AUDIT_CODE | Research what exists in codebase + ecosystem before writing spec. Prevents duplication. |
-| 2 | REFINEMENT | Move from backlog to `.pm/todo/{group}/`, write formal spec with goal, success criteria, prior art |
-| 2.5 | PRE_TASK_CHECKLIST | Run `/code-health`, verify MECE (no overlaps), check task count (~50-100), get user approval |
-| 2.75 | ADVERSARIAL_REVIEW | Two-subagent pipeline stress-tests spec: generates 8-15 adversarial questions, user answers, spec updated |
-| 3 | SPRINT_PLANNING | Break spec into tasks, write `tasks.sql`, seed `.pm/workflow.db`. Tasks are one-session granularity (15-60 min). |
-| 3.5 | POST_LOAD_AUDIT | Subagent checks: dependency graph validity, orphan detection, cycle detection, coverage check |
-| 4 | START_IMPLEMENTATION | Hand off to tdd-agent. Developers run 8-10 parallel terminals. |
-| 5 | MONITOR | Track sprint progress, unblock tasks, run periodic `/code-health` |
-| 6 | SPRINT_COMPLETION | Verify all tasks, audit pattern compliance, generate completion report, archive sprint |
+### Interactive vs async
 
-**Task schema** (key columns): `sprint`, `task_num`, `title`, `type` (database/actions/frontend/infra/agent/e2e/docs), `owner`, `status` (pending/red/green/blocked), `done_when` (testable acceptance criteria), `estimated_minutes`, `complexity`.
-
-**Dependencies**: Explicit `dep` table. A task is "available" when all predecessors are `status='green'` AND `merged_at IS NOT NULL`.
+- **Interactive** (human at keyboard): pauses after spec draft, after task breakdown, and on unrecoverable failure
+- **Async** (`claude -p` / `n2o async`): runs full loop without pausing. Failures → mark task blocked, move to next. Output is always a PR.
 
 ---
 
-## TDD-Agent phases
+## Quality gates
 
-Every task follows this cycle. All phases are mandatory — skipping any phase is incomplete work.
+After each task's REFACTOR phase, before commit:
 
-| # | Phase | What happens |
-|---|-------|-------------|
-| 1 | PICK | Query `available_tasks` view, claim task atomically (UPDATE ... WHERE owner IS NULL) |
-| 2 | RED | Write failing tests that verify "Done When" criteria. Apply litmus test to prevent fake tests. All tests must fail. |
-| 3 | GREEN | Write minimum code to make tests pass. Typecheck + lint. |
-| 4 | REFACTOR | Clean up without changing behavior. Tests must still pass. |
-| 5 | AUDIT | Manual: typecheck + lint. Then 3 parallel subagents: Pattern Compliance, Gap Analysis, Testing Posture (grade A-F). |
-| 6 | FIX_AUDIT | If any grade < A: fix violations, re-audit. Loop until A grade (max 2 iterations). |
-| 7 | UPDATE_DB | `UPDATE tasks SET status = 'green'` |
-| 8 | CODIFY | Report discovered patterns for user review. User decides whether to add to skills. |
-| 9 | COMMIT | Create conventional commit via `scripts/git/commit-task.sh` |
-| 10 | REPORT | Output mandatory status table (all phases + grades). Then loop to phase 1. |
+1. **Deterministic gates** (from `.pm/config.json`): test, typecheck, lint, build — must all pass
+2. **LLM judge** (Spotify-style): runs as a **subagent** with only the diff + task `done_when` + description. Pass/fail — does the diff match acceptance criteria and stay in scope? Separate from the session that wrote the code.
+3. **2-attempt cap**: if gates fail twice, mark task blocked and move to next (Stripe's policy)
 
-**Special cases**:
-- **E2E tasks**: Skip RED/GREEN/REFACTOR, follow E2E-specific flow. Single audit subagent instead of 3.
-- **Frontend tasks**: Automatically trigger frontend-review agent after GREEN phase.
+No A-F grading. No FIX_AUDIT loop. No codification phase. No phase logging. No workflow status tables.
+
+## Version control
+
+One PR per workflow run (not per task). Each task gets a commit with trailers (`Task`, `Assisted-by`, `Done-When`). The PR is opened at the end with all commits on a single branch (`workflow/{sprint}` or `async/<job-id>`).
 
 ---
 
-## Bug-Workflow phases
+## Supporting skills
 
-Used when tdd-agent can't reproduce a bug in tests, or when browser debugging is needed.
-
-| # | Phase | What happens |
-|---|-------|-------------|
-| 1 | REPRODUCE | Confirm bug exists. Document exact steps, expected vs actual behavior. |
-| 2 | INVESTIGATE | Find root cause: code reading, DB queries, temp Playwright E2E test with console/network capture. |
-| 3 | SCOPE | Define impact: one user or widespread? Data corruption or display? Blocking or workaround? |
-| 4 | HYPOTHESIS | State probable root cause with evidence and confidence level. |
-| 5 | TASK | Create task(s) in `.pm/workflow.db` for tdd-agent to fix. Include hypothesis + evidence in description. |
-
----
-
-## Supporting agents
-
-### Code Health
+### Code Health (`skills/health/`)
 6 parallel subagent checks: file length, missing docs, function density, circular deps, dead exports, test coverage gaps. Creates non-blocking tech-debt tasks.
 
-**Invoked by**: `/code-health` (full scan), tdd-agent AUDIT phase (changed files only), pm-agent PRE_TASK_CHECKLIST (full scan).
+**Optional standalone tool** — not part of the main workflow loop.
 
-### Frontend Review
-14-step multi-agent UI quality system. Three parallel assessors (programmatic/axe-core, vision/screenshot+LLM, interaction/Playwright), then merge → fix → re-assess loop (max 5 iterations).
+### Frontend Review (`skills/review/`)
+Multi-agent UI quality system. Three parallel assessors (programmatic/axe-core, vision/screenshot+LLM, interaction/Playwright).
 
 **Triggered when**: Task type = `frontend` and reaches GREEN phase.
 
-### Detect Project
+### Detect Project (`skills/detect/`)
 Scans codebase, fills `<!-- UNFILLED -->` sections in project's `CLAUDE.md` with detected structure, conventions, database info.
 
 **Run after**: `n2o init` or when project structure changes.
@@ -140,9 +112,9 @@ These are **not agents** — they provide reference material automatically consu
 
 | Skill | What it provides |
 |-------|-----------------|
-| **react-best-practices** | 45 rules across 8 categories (waterfalls, bundle size, SSR, data fetching, re-renders, rendering, JS perf, advanced). Consulted when writing/reviewing React/Next.js. |
-| **ux-heuristics** | 28 UX principles (info architecture, density, accessibility, overflow, interactions, patterns, modals, data). Two-tier: general (this file) + project-specific (`.claude/ui-heuristics.md`). |
-| **design micro-skills** | 18 small skills (animate, adapt, audit, bolder, clarify, colorize, critique, delight, distill, extract, frontend-design, harden, normalize, onboard, optimize, polish, quieter, teach-impeccable). Currently in `.claude/skills/design/`. |
+| **react** (`skills/react/`) | React/Next.js performance patterns. Consulted when writing/reviewing React. |
+| **ux** (`skills/ux/`) | 28 UX principles. Two-tier: general (this file) + project-specific (`.claude/ui-heuristics.md`). |
+| **design micro-skills** (`skills/design/`) | 18 small skills (animate, adapt, audit, bolder, clarify, etc.). |
 
 ---
 
@@ -153,9 +125,9 @@ Schema at `.pm/schema.sql`. Key tables and views:
 ### Tables
 | Table | Purpose |
 |-------|---------|
-| `task` | Primary task tracking. PK: `(sprint, task_num)`. Status, owner, audit grades, git info. |
+| `task` | Primary task tracking. PK: `(sprint, task_num)`. Status, owner, git info. |
 | `dep` | Dependency graph between tasks. Gating: predecessor must be green + merged. |
-| `telemetry` | Audit trail of all phase transitions, tool calls, subagent spawns. |
+| `telemetry` | Audit trail of phase transitions, tool calls, subagent spawns. |
 | `transcript` | One row per Claude Code session. Token counts, model, timestamps. |
 | `message` | Full conversation message content (no truncation). |
 | `tool` | Full input params for every tool invocation. |
@@ -174,7 +146,7 @@ Schema at `.pm/schema.sql`. Key tables and views:
 ```
 pending → red → green → (merged via git)
     │
-    └→ blocked (unresolved dependency)
+    └→ blocked (unresolvable failure or dependency)
 ```
 
 ---
@@ -194,12 +166,12 @@ No hooks in `.claude/settings.json`. The first `n2o` command per session handles
 ## What must not break during cleanup
 
 1. **Skill discovery**: Claude Code must find SKILL.md files under `.claude/skills/` (via symlinks in this repo, via copies in projects)
-2. **Sync flow**: `n2o sync` must copy skills from their source location into target project's `.claude/skills/`
+2. **Sync flow**: `n2o sync` must copy skills from `skills/` into target project's `.claude/skills/`
 3. **Checksum protection**: MD5 checksums must still prevent overwriting locally modified skills
 4. **Manifest contract**: `n2o-manifest.json` must accurately list framework files vs project files
-5. **Phase tracking**: `n2o phase enter` replaces raw `INSERT INTO telemetry` in SKILL.md files
-6. **Lint validation**: `n2o check` validates skill markers and file sizes (replaces standalone lint commands)
+5. **Task commands**: `n2o task *` replaces raw SQL in SKILL.md files (phase 5)
+6. **Lint validation**: `n2o check` validates skill markers and file sizes
 7. **Lazy init**: First `n2o` call per session injects context and checks environment. `n2o` must be on PATH.
 8. **Task database**: `.pm/workflow.db` schema, auto-migrations, and views must remain functional
 9. **Template scaffolding**: `n2o init` must still produce a working project from `templates/`
-10. **Existing project migration**: `n2o sync` must remove stale hook entries from `.claude/settings.json`
+10. **Existing project migration**: `n2o sync` must handle rename from old skill names to new descriptive names
