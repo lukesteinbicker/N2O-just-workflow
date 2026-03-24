@@ -1,15 +1,9 @@
-# Task database + seed files (runtime state lives in Supabase)
+# Task database + seed files
 .pm/tasks.db
 .pm/todo/**/tasks.sql
 
 # Working memory (transitory scratch files)
 .wm/
-
-# Agent worktrees (created by coordination system)
-.worktrees/
-
-# Merge conflict reports
-.pm/conflicts/
 
 # Sync backups
 .n2o-backup/
@@ -19,6 +13,10 @@
 
 # Obsidian
 .obsidian/
+
+# Go build artifacts
+/n2o
+dist/
 
 # OS files
 .DS_Store

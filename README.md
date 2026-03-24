@@ -1,31 +1,33 @@
 # N2O AI Development Workflows
 
-A multi-agent development system that coordinates planning, implementation, and debugging
+A unified workflow system that coordinates planning, implementation, and debugging
 through a shared SQLite task database. Achieves 4-5x productivity gains — see
 [BENEFITS.md](./BENEFITS.md) for why N2O is investing in this.
 
-## Agents
+## Workflow
 
-| Agent | Purpose | Invoke |
-|-------|---------|--------|
-| **pm-agent** | Sprint planning, spec writing, task breakdown | `/pm-agent` |
-| **tdd-agent** | TDD implementation with automated auditing | `/tdd-agent` |
-| **bug-workflow** | Root cause investigation and debugging | `/bug-workflow` |
-| **frontend-review** | Multi-agent UI quality review (programmatic + vision + interaction) | `/frontend-review` |
-| **code-health** | Codebase quality audit (file length, dead exports, circular deps) | `/code-health` |
+One entry point: `/workflow`. Auto-routes between phases based on context. Auto-chains. Output is always a PR.
+
+```
+PLAN → BREAK DOWN → IMPLEMENT (loop per task) → PR
+                        ↑              ↓
+                   DEBUG ←──── can't write failing test?
+```
+
+**Optional standalone skills**:
+- `/health` — Codebase quality audit (file length, dead exports, circular deps)
+- `/review` — Multi-agent UI quality review (programmatic + vision + interaction)
 
 **Pattern skills** (consulted automatically during relevant work):
-- `/react-best-practices` — React/Next.js performance patterns
-- `/web-design-guidelines` — UI accessibility and design patterns
-- `/ux-heuristics` — 29 principle-based UX heuristic rules
+- `/react` — React/Next.js performance patterns
+- `/ux` — 29 principle-based UX heuristic rules
 
 ## Repository Structure
 
 | Directory | What's in it |
 |-----------|-------------|
-| [`01-getting-started/`](./01-getting-started/) | Overview, workflow, quickstart, setup |
-| [`02-agents/`](./02-agents/) | Agent skill definitions (pm, tdd, bug, frontend-review, code-health) |
-| [`03-patterns/`](./03-patterns/) | Coding standards (React, web design, UX heuristics) |
+| [`skills/`](./skills/) | All skill definitions (workflow, plan, test, debug, health, etc.) |
+| [`docs/`](./docs/) | Setup, overview, and workflow guides |
 | [`templates/`](./templates/) | Project templates, config examples, Storybook setup |
 | [`scripts/`](./scripts/) | Git commit automation |
 | [`.pm/`](./.pm/) | SQLite schema, sprint specs, task seeds |
@@ -43,17 +45,13 @@ mkdir -p .pm/todo .wm
 sqlite3 .pm/tasks.db < .pm/schema.sql
 ```
 
-**3. Start planning**
+**3. Start working**
 ```bash
-/pm-agent create a spec for [your feature]
+# Just describe what you want — the workflow auto-routes
+plan a user authentication feature
 ```
 
-**4. Start implementing**
-```bash
-/tdd-agent
-```
-
-See [`01-getting-started/`](./01-getting-started/) for detailed setup and workflow guides.
+See [`docs/`](./docs/) for detailed setup and workflow guides.
 
 ## For AI Agents
 

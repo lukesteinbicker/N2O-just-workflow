@@ -2,18 +2,21 @@
 
 ## Framework
 
-This is the N2O workflow framework source repo. Skills live at their source paths:
-- `/pm-agent` — `02-agents/pm-agent/SKILL.md`
-- `/tdd-agent` — `02-agents/tdd-agent/SKILL.md`
-- `/bug-workflow` — `02-agents/bug-workflow/SKILL.md`
-- `/react-best-practices` — `03-patterns/react-best-practices/SKILL.md`
-- `/code-health` — `02-agents/code-health/SKILL.md`
-- `/frontend-review` — `02-agents/frontend-review/SKILL.md`
-- `/web-design-guidelines` — `03-patterns/web-design-guidelines/SKILL.md`
-- `/ux-heuristics` — `03-patterns/ux-heuristics/SKILL.md`
+This is the N2O workflow framework source repo. Skills live in `skills/`:
+- `/workflow` — `skills/workflow/SKILL.md` (unified entry point)
+- `skills/plan/SKILL.md` (planning, internal to workflow)
+- `skills/test/SKILL.md` (TDD implementation, internal to workflow)
+- `skills/debug/SKILL.md` (bug investigation, internal to workflow)
+- `/health` — `skills/health/SKILL.md` (optional standalone)
+- `/review` — `skills/review/SKILL.md`
+- `/detect` — `skills/detect/SKILL.md`
+- `/react` — `skills/react/SKILL.md` (ambient pattern)
+- `/ux` — `skills/ux/SKILL.md` (ambient pattern)
+- `skills/design/` (micro-skills)
 
 Task database schema: `.pm/schema.sql`
-Sync CLI: `./n2o`
+CLI: `n2o` (Go binary — `go install ./cmd/n2o/` or `make build`)
+CLI source: `cmd/n2o/`, `internal/`
 Templates: `templates/`
 
 ## Writing Plans
@@ -37,7 +40,7 @@ Plans follow the pyramid principle. Keep them **under 100 lines**. If longer, th
 
 ## Writing Specs
 
-Specs follow the pyramid principle template defined in `02-agents/pm-agent/SKILL.md` (see "Spec Template" section). Key rules:
+Specs follow the pyramid principle template defined in `skills/plan/SKILL.md` (see "Spec Template" section). Key rules:
 - One-line summary under the title
 - Recent Changes table near the top
 - Current State before Vision (ground the reader first)

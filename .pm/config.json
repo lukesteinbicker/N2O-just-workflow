@@ -14,11 +14,6 @@
     "env_var": ""
   },
 
-  "supabase": {
-    "url": "https://mktnhfbpvksnyfzipuph.supabase.co",
-    "key_env": "SUPABASE_KEY"
-  },
-
   "pm_tool": null,
 
   "team": [],

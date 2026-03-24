@@ -1,12 +1,9 @@
 {
   "version": "1.0.0",
   "framework_files": [
-    "02-agents/**",
-    "03-patterns/**",
+    "skills/**",
     ".pm/schema.sql",
-    ".pm/migrations/**",
-    "scripts/**",
-    "CHANGELOG.md"
+    ".pm/migrations/**"
   ],
   "project_files": [
     ".pm/config.json",
@@ -27,8 +24,6 @@
     ".pm/migrations",
     ".wm",
     ".claude",
-    ".claude/skills",
-    "scripts",
-    "scripts/git"
+    ".claude/skills"
   ]
 }

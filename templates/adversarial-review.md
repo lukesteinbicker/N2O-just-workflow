@@ -1,6 +1,6 @@
 # Adversarial Review — Agent Prompts
 
-> Referenced by Phase 2.75 in `02-agents/pm-agent/SKILL.md`.
+> Referenced by Phase 2.75 in `skills/plan/SKILL.md`.
 
 ## Agent 1: Question Generator
 

@@ -352,7 +352,7 @@ CREATE TABLE IF NOT EXISTS transcripts (
     assistant_message_timestamps TEXT,     -- JSON array of assistant message ISO timestamps
     background_task_count INTEGER DEFAULT 0,  -- Count of queue-operation messages (async work)
     web_search_count INTEGER DEFAULT 0,    -- Count of web search requests from server_tool_use
-    synced_at DATETIME,                    -- When this row was last synced to Supabase (NULL = not synced)
+    synced_at DATETIME,                    -- When this row was last synced to remote (NULL = not synced)
     sync_attempts INTEGER DEFAULT 0,       -- Number of failed sync attempts (skip after 5)
     sync_error TEXT,                       -- Last sync error message (NULL = no error)
     FOREIGN KEY (sprint, task_num) REFERENCES tasks(sprint, task_num)
@@ -772,6 +772,25 @@ SELECT
         ELSE 'minor_issues'
     END as health_status
 FROM transcripts tr;
+
+-- Event log: every n2o task * command generates an event here
+-- Unsynced events (synced_at IS NULL) flush on next n2o sync
+CREATE TABLE IF NOT EXISTS event (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id TEXT NOT NULL UNIQUE,       -- UUID, generated client-side
+    event_type TEXT NOT NULL,            -- task.claimed, task.status_changed, etc.
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+    user_id TEXT,                        -- from auth token (NULL if logged out)
+    project_id TEXT,                     -- from .pm/config.json
+    payload TEXT NOT NULL,               -- JSON blob
+    synced_at DATETIME,                  -- NULL = not yet synced
+    sync_attempts INTEGER DEFAULT 0,
+    sync_error TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_event_unsynced
+    ON event(synced_at) WHERE synced_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_event_type ON event(event_type);
 
 -- Migration tracking: records which schema migrations have been applied
 CREATE TABLE IF NOT EXISTS _migrations (
