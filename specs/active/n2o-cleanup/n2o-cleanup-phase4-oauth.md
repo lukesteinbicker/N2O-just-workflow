@@ -18,8 +18,8 @@ The architecture section below documents the full picture (4a + 4b). Sections ma
 Developer's machine          Web app API              Pipeline              Tinybird
 ┌────────────────────┐      ┌──────────────────┐     ┌──────────┐         ┌─────────────────┐
 │ n2o CLI (Go binary)│      │ Next.js API      │     │ CDC      │         │ Events API      │
-│                    │──────▸│                  │     │ consumer │         │ (ClickHouse)    │
-│ .pm/workflow.db       │events│ ├── Validate     │     │          │         │                 │
+│                    │─────▸│                  │     │ consumer │         │ (ClickHouse)    │
+│ .pm/workflow.db    │events│ ├── Validate     │     │          │         │                 │
 │  (single DB:       │      │ ├── Reject 409   │     │ Estuary  │         │ Materialized    │
 │   tasks+events+    │      │ ├── INSERT into  │────▸│ Flow     │────────▸│ Views           │
 │   telemetry)       │      │ │   Postgres      │ CDC │ or       │ NDJSON  │                 │
@@ -30,7 +30,7 @@ Developer's machine          Web app API              Pipeline              Tiny
                      pull   │ │                 │                   JWT    │                 │
                ◂────────────│ └── Pull endpoint │          ┌──────────────▸│                 │
                             │     (reads PG)    │          │               └─────────────────┘
-                            └──────────────────┘          │
+                            └──────────────────┘           │
                                     │                      │
                               mints JWT                    │
                                     │                      │

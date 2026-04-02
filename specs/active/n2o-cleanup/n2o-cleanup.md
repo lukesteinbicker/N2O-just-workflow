@@ -14,7 +14,6 @@ Read [workflow-reference.md](workflow-reference.md) first — it documents how t
 | 3 | [n2o-cleanup-phase3-go-cli.md](n2o-cleanup-phase3-go-cli.md) | Rewrite `n2o` as a Go CLI with Cobra + Charmbracelet |
 | 4 | [n2o-cleanup-phase4-oauth.md](n2o-cleanup-phase4-oauth.md) | Add OAuth login + sync task data to/from external app API |
 | 5 | [n2o-cleanup-phase5-collect.md](n2o-cleanup-phase5-collect.md) | `n2o task *` commands replace raw SQL + lazy transcript parsing |
-| 6 | [n2o-cleanup-phase6-async.md](n2o-cleanup-phase6-async.md) | Async/overnight workflow: run agents on remote infra (PR review, sprint exec, code health) |
 | — | [n2o-cleanup-version-control.md](n2o-cleanup-version-control.md) | Unified workflow + version control: `/workflow` entry point, auto-routing, LLM judge, PRs as output |
 
 ## Ordering
@@ -27,10 +26,6 @@ Phase 6 depends on phases 3-5 (needs Go CLI, OAuth, and task commands as foundat
 **Phase 4 is split into two stages:**
 - **4a (do now)**: OAuth login, event log, Postgres write path, CLI push/pull sync. This is everything the CLI needs.
 - **4b (deferred)**: Tinybird setup, CDC pipeline, materialized views, dashboard endpoints. This is analytics-only — the CLI doesn't reference Tinybird directly. Build when the web app dashboard is ready.
-
-## Decision: Why SQLite (not DuckDB)
-
-DuckDB is 15-124x slower than SQLite for the CLI's dominant workload (single-row PK lookups and updates). It also blocks concurrent readers during writes and has higher startup/memory overhead. The analytics views run on hundreds of rows — SQLite handles them in single-digit milliseconds. DuckDB's columnar engine only shines at millions of rows.
 
 ## Decision: Why Go + Cobra
 
