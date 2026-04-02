@@ -116,17 +116,22 @@ func AutoMigrate(db *sql.DB, migrationsDir string) error {
 }
 
 func InitFromSchema(dbPath, schemaPath string) error {
+	schema, err := os.ReadFile(schemaPath)
+	if err != nil {
+		return fmt.Errorf("reading schema: %w", err)
+	}
+	return InitFromSchemaBytes(dbPath, schema)
+}
+
+// InitFromSchemaBytes creates a new database from schema content in memory.
+// Returns nil if the database file already exists.
+func InitFromSchemaBytes(dbPath string, schema []byte) error {
 	if _, err := os.Stat(dbPath); err == nil {
 		return nil
 	}
 
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
 		return err
-	}
-
-	schema, err := os.ReadFile(schemaPath)
-	if err != nil {
-		return fmt.Errorf("reading schema: %w", err)
 	}
 
 	d, err := Open(dbPath)

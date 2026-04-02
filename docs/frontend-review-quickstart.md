@@ -40,7 +40,7 @@ This produces a report at `.claude/review-reports/tasks.md`. Review it, then:
 Copy the example config to your project:
 
 ```bash
-cp <framework-path>/templates/review-config.json.example .claude/review-config.json
+cp <framework-path>/skills/review/review-config.json.example .claude/review-config.json
 ```
 
 Edit values for your project (auth strategy, dev server command, Storybook port, etc.). All fields have sensible defaults — you only need to change what differs.
@@ -57,7 +57,7 @@ You don't need to run `/frontend-review` manually in most cases:
 
 ## Storybook Integration (Optional)
 
-If your project uses Storybook, the review agent takes component-level screenshot baselines automatically. See `templates/storybook-setup/` for setup instructions, or run `/detect-project` to auto-generate stories.
+If your project uses Storybook, the review agent takes component-level screenshot baselines automatically. See `skills/review/storybook-setup/` for setup instructions, or run `/detect-project` to auto-generate stories.
 
 Without Storybook, the agent still runs — it just skips component baselines and uses structural DOM assertions instead.
 

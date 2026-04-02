@@ -7,14 +7,7 @@ import (
 )
 
 type GlobalConfig struct {
-	FrameworkPath string `json:"framework_path,omitempty"`
 	DeveloperName string `json:"developer_name,omitempty"`
-	AutoSync      bool   `json:"auto_sync,omitempty"`
-}
-
-type DatabaseConfig struct {
-	Type   string `json:"type,omitempty"`
-	EnvVar string `json:"env_var,omitempty"`
 }
 
 type CommandsConfig struct {
@@ -27,8 +20,8 @@ type CommandsConfig struct {
 type ProjectConfig struct {
 	N2OVersion       string         `json:"n2o_version,omitempty"`
 	ProjectName      string         `json:"project_name,omitempty"`
+	AITool           string         `json:"ai_tool,omitempty"`
 	Commands         CommandsConfig `json:"commands,omitempty"`
-	Database         DatabaseConfig `json:"database,omitempty"`
 	PMTool           string         `json:"pm_tool,omitempty"`
 	Team             []string       `json:"team,omitempty"`
 	ClaimTasks       bool           `json:"claim_tasks,omitempty"`

@@ -16,7 +16,7 @@ var prefixMap = map[string]string{
 	"docs":     "docs",
 }
 
-func Commit(sprint string, taskNum int, title, doneWhen, taskType string) (string, error) {
+func Commit(sprint string, taskNum int, title, doneWhen, taskType, commitTrailer string) (string, error) {
 	prefix := prefixMap[taskType]
 	if prefix == "" {
 		prefix = "feat"
@@ -34,7 +34,7 @@ func Commit(sprint string, taskNum int, title, doneWhen, taskType string) (strin
 		fmt.Fprintf(&body, "\nDone-When: %s", doneWhen)
 	}
 	fmt.Fprintf(&body, "\nTask: %s#%d", sprint, taskNum)
-	fmt.Fprintf(&body, "\nAssisted-by: Claude Code")
+	fmt.Fprintf(&body, "\n%s", commitTrailer)
 
 	message := subject + "\n" + body.String()
 

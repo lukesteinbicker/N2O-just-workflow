@@ -10,11 +10,6 @@
     "build": ""
   },
 
-  "database": {
-    "type": "",
-    "env_var": ""
-  },
-
   "pm_tool": null,
 
   "auto_invoke_skills": true,

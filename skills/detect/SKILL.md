@@ -227,7 +227,7 @@ Codify as project heuristics? (Yes / No / Customize)
 
 ### 9. Generate Storybook Stories (Optional, React/TypeScript v1)
 
-After detecting project structure, optionally generate Storybook stories for UI components. This uses the `StoryGenerator` interface defined in `templates/storybook-setup/StoryGenerator.ts` and the story templates in `templates/storybook-setup/story-templates/`.
+After detecting project structure, optionally generate Storybook stories for UI components. This uses the `StoryGenerator` interface defined in `skills/review/storybook-setup/StoryGenerator.ts` and the story templates in `skills/review/storybook-setup/story-templates/`.
 
 **Prerequisites:**
 - Storybook is installed — if not, **actively suggest it**:
@@ -237,7 +237,7 @@ After detecting project structure, optionally generate Storybook stories for UI 
     - Isolated component development and testing
     - Auto-generated stories from your component props
 
-  Set up now? See templates/storybook-setup/CHECKLIST.md for the full checklist,
+  Set up now? See skills/review/storybook-setup/CHECKLIST.md for the full checklist,
   or run: npx storybook@latest init
   ```
   If user declines, skip this section. Frontend review still works without Storybook.
@@ -310,7 +310,7 @@ When running on a project that already has stories, scope to changed files:
 
 **Storybook Integration Protocol:**
 
-After generating stories, verify they work by following the integration protocol documented in `templates/storybook-setup/README.md`:
+After generating stories, verify they work by following the integration protocol documented in `skills/review/storybook-setup/README.md`:
 
 1. Check if Storybook is running at the configured port (default 6006).
 2. If not running, start via the configured command, wait up to 60s.

@@ -3,8 +3,8 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/lukes/n2o/internal/config"
-	"github.com/lukes/n2o/internal/ui"
+	"n2o/cli/config"
+	"n2o/cli/ui"
 	"github.com/spf13/cobra"
 )
 

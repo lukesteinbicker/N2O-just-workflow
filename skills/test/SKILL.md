@@ -431,7 +431,7 @@ If the task has `type: frontend`, invoke `/review` on the affected page after re
 **Prerequisites check** (verify before invoking):
 1. Dev server running at configured port — if not, warn: `"⚠️ Dev server not running. Start it with '{dev_server_command}' before frontend review can run."`
 2. `@playwright/test` and `@axe-core/playwright` in `package.json` — if missing, warn: `"⚠️ Playwright not installed. Run: npm install -D @playwright/test @axe-core/playwright && npx playwright install chromium"`
-3. `.claude/review-config.json` exists — if missing, warn: `"⚠️ No review config found. Copy from templates/review-config.json.example to .claude/review-config.json"`
+3. `.claude/review-config.json` exists — if missing, warn: `"⚠️ No review config found. Copy from skills/review/review-config.json.example to .claude/review-config.json"`
 
 If any prerequisite fails, **log the specific warning** and continue to REFACTOR. Do not silently skip.
 

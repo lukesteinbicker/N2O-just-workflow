@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/lukes/n2o/internal/api"
-	"github.com/lukes/n2o/internal/ui"
+	"n2o/cli/api"
+	"n2o/cli/ui"
 	"github.com/spf13/cobra"
 )
 

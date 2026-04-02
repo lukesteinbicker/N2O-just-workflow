@@ -84,12 +84,12 @@ func FileChecksum(path string) (string, error) {
 	return fmt.Sprintf("%x", h.Sum(nil)), nil
 }
 
-func ExtractSkillVersions(skillsDir string, db *sql.DB) error {
+func ExtractSkillVersions(skillsDir, manifestName string, db *sql.DB) error {
 	return filepath.Walk(skillsDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
-		if info.IsDir() || info.Name() != "SKILL.md" {
+		if info.IsDir() || info.Name() != manifestName {
 			return nil
 		}
 

@@ -15,9 +15,9 @@ This is the N2O workflow framework source repo. Skills live in `skills/`:
 - `skills/design/` (micro-skills)
 
 Task database schema: `.pm/schema.sql`
-CLI: `n2o` (Go binary — `go install ./cmd/n2o/` or `make build`)
-CLI source: `cmd/n2o/`, `internal/`
-Templates: `templates/`
+CLI: `n2o` (Go binary — `make build` or `make install`)
+CLI source: `cli/`
+Templates (scaffolds): `templates/`
 
 ## Writing Plans
 

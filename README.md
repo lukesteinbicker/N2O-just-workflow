@@ -27,9 +27,9 @@ PLAN → BREAK DOWN → IMPLEMENT (loop per task) → PR
 | Directory | What's in it |
 |-----------|-------------|
 | [`skills/`](./skills/) | All skill definitions (workflow, plan, test, debug, health, etc.) |
+| [`cli/`](./cli/) | Go CLI source (`n2o` binary) |
 | [`docs/`](./docs/) | Setup, overview, and workflow guides |
-| [`templates/`](./templates/) | Project templates, config examples, Storybook setup |
-| [`scripts/`](./scripts/) | Git commit automation |
+| [`templates/`](./templates/) | Project scaffolds (CLAUDE.md, config.json, schema-extensions.sql) |
 | [`.pm/`](./.pm/) | SQLite schema, sprint specs, task seeds |
 | [`specs/`](./specs/) | Product specifications |
 

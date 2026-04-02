@@ -1,14 +1,15 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/lukes/n2o/internal/config"
-	"github.com/lukes/n2o/internal/ui"
+	"n2o/cli/api"
+	"n2o/cli/auth"
+	"n2o/cli/config"
+	"n2o/cli/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -38,22 +39,26 @@ func runSync(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	gcfg, err := config.LoadGlobal()
-	if err != nil {
-		return fmt.Errorf("load global config (run 'n2o setup' first): %w", err)
+	// Authenticate.
+	if !auth.IsLoggedIn() {
+		return fmt.Errorf("not authenticated — run 'n2o login' first")
 	}
-	frameworkPath := gcfg.FrameworkPath
 
-	// Load manifest for version.
-	manifestData, err := os.ReadFile(filepath.Join(frameworkPath, "n2o-manifest.json"))
+	client, err := api.NewFromConfig()
 	if err != nil {
-		return fmt.Errorf("read manifest: %w", err)
+		return fmt.Errorf("creating API client: %w", err)
 	}
-	var manifest struct {
-		Version string `json:"version"`
+	if client == nil {
+		return fmt.Errorf("not authenticated — run 'n2o login' first")
 	}
-	if err := json.Unmarshal(manifestData, &manifest); err != nil {
-		return fmt.Errorf("parse manifest: %w", err)
+
+	// Download framework content from API.
+	if !Quiet {
+		ui.PrintInfo("Downloading framework...")
+	}
+	bundle, err := api.DownloadFramework(client)
+	if err != nil {
+		return fmt.Errorf("download framework: %w", err)
 	}
 
 	if !Quiet {
@@ -63,31 +68,22 @@ func runSync(cmd *cobra.Command, args []string) error {
 
 	var synced int
 
-	// Sync skills.
-	if syncOnly == "" || syncOnly == "skills" {
-		frameworkSkills := filepath.Join(frameworkPath, "skills")
-		projectSkills := filepath.Join(projectPath, ".claude", "skills")
-		if _, err := os.Stat(frameworkSkills); err == nil {
-			count, err := syncDir(frameworkSkills, projectSkills)
-			if err != nil {
-				return fmt.Errorf("sync skills: %w", err)
-			}
-			synced += count
+	for _, f := range bundle.Files {
+		// Filter by category if --only is set.
+		if syncOnly == "skills" && !strings.HasPrefix(f.Path, AI.SkillsPathPrefix()) {
+			continue
 		}
-	}
+		if syncOnly == "schema" && f.Path != ".pm/schema.sql" {
+			continue
+		}
 
-	// Sync schema.sql.
-	if syncOnly == "" || syncOnly == "schema" {
-		src := filepath.Join(frameworkPath, ".pm", "schema.sql")
-		dst := filepath.Join(projectPath, ".pm", "schema.sql")
-		if _, err := os.Stat(src); err == nil {
-			updated, err := syncFile(src, dst)
-			if err != nil {
-				return fmt.Errorf("sync schema: %w", err)
-			}
-			if updated {
-				synced++
-			}
+		targetPath := filepath.Join(projectPath, f.Path)
+		updated, err := syncFileFromContent(targetPath, []byte(f.Content))
+		if err != nil {
+			return fmt.Errorf("sync %s: %w", f.Path, err)
+		}
+		if updated {
+			synced++
 		}
 	}
 
@@ -97,15 +93,15 @@ func runSync(cmd *cobra.Command, args []string) error {
 		if projCfg == nil {
 			projCfg = &config.ProjectConfig{}
 		}
-		if projCfg.N2OVersion != manifest.Version {
-			projCfg.N2OVersion = manifest.Version
+		if projCfg.N2OVersion != bundle.Version {
+			projCfg.N2OVersion = bundle.Version
 			if !syncDryRun {
 				if err := config.SaveProject(projectPath, projCfg); err != nil {
 					return fmt.Errorf("save project config: %w", err)
 				}
 			}
 			if !Quiet {
-				fmt.Printf("  updated version -> %s\n", manifest.Version)
+				fmt.Printf("  updated version -> %s\n", bundle.Version)
 			}
 			synced++
 		}
@@ -120,55 +116,16 @@ func runSync(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func syncDir(src, dst string) (int, error) {
-	var count int
-	return count, filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if info.IsDir() {
-			return nil
-		}
-		rel, _ := filepath.Rel(src, path)
-		target := filepath.Join(dst, rel)
-
-		updated, err := syncFile(path, target)
-		if err != nil {
-			return err
-		}
-		if updated {
-			count++
-		}
-		return nil
-	})
-}
-
-func syncFile(src, dst string) (bool, error) {
-	srcInfo, err := os.Stat(src)
-	if err != nil {
-		return false, err
-	}
-
-	dstInfo, err := os.Stat(dst)
-	if err == nil && !syncForce {
-		// Skip if destination is newer.
-		if dstInfo.ModTime().After(srcInfo.ModTime()) {
+// syncFileFromContent writes content to dst if it differs from the existing file.
+func syncFileFromContent(dst string, content []byte) (bool, error) {
+	// Compare with existing content.
+	if existing, err := os.ReadFile(dst); err == nil {
+		if string(existing) == string(content) {
 			return false, nil
 		}
-		// Skip if same size and mod time (quick check).
-		if dstInfo.Size() == srcInfo.Size() && dstInfo.ModTime().Equal(srcInfo.ModTime()) {
-			return false, nil
-		}
-	}
-
-	// Compare contents to avoid unnecessary writes.
-	srcData, err := os.ReadFile(src)
-	if err != nil {
-		return false, err
-	}
-	if dstData, err := os.ReadFile(dst); err == nil {
-		if string(srcData) == string(dstData) {
-			return false, nil
+		if !syncForce {
+			// If the file exists and force isn't set, check mod time.
+			// Since we're pulling from API, we always update unless content matches.
 		}
 	}
 
@@ -189,7 +146,7 @@ func syncFile(src, dst string) (bool, error) {
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return false, err
 	}
-	if err := os.WriteFile(dst, srcData, 0o644); err != nil {
+	if err := os.WriteFile(dst, content, 0o644); err != nil {
 		return false, err
 	}
 	if !Quiet {

@@ -1,8 +1,8 @@
 package cmd
 
 import (
-	"github.com/lukes/n2o/internal/auth"
-	"github.com/lukes/n2o/internal/ui"
+	"n2o/cli/auth"
+	"n2o/cli/ui"
 	"github.com/spf13/cobra"
 )
 

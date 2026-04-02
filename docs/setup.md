@@ -47,7 +47,7 @@ cd <your-project-path> && claude
 
 `n2o init` handles everything: creates `.pm/` directories, initializes `tasks.db` from the schema, installs skills and session hooks, scaffolds `CLAUDE.md`, and registers your developer name.
 
-`n2o check` verifies: skills installed, session hooks configured, rates.json present, database tables exist, and `.gitignore` is correct.
+`n2o check` verifies: skills installed, session hooks configured, database tables exist, and `.gitignore` is correct.
 
 ## What Goes Where
 
@@ -79,7 +79,7 @@ If your task has `type: frontend`, the workflow automatically runs `/review` aft
 
 - **Playwright**: `npm install -D @playwright/test @axe-core/playwright && npx playwright install chromium`
 - **Dev server running**: The review agent navigates to your page in a real browser
-- **Config** (optional): Copy `<framework-path>/templates/review-config.json.example` to `.claude/review-config.json` and customize
+- **Config** (optional): Copy `<framework-path>/skills/review/review-config.json.example` to `.claude/review-config.json` and customize
 
 ### Storybook (optional, recommended)
 
@@ -87,7 +87,7 @@ Storybook enables component-level screenshot baselines during frontend review. T
 
 1. Run `npx storybook@latest init`
 2. Run `/detect` to auto-generate stories for your components
-3. See `templates/storybook-setup/CHECKLIST.md` for the full checklist
+3. See `skills/review/storybook-setup/CHECKLIST.md` for the full checklist
 
 ## Cleanup / Reset
 

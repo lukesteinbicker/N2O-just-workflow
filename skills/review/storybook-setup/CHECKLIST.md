@@ -6,7 +6,7 @@
 
 - [ ] Install Storybook: `npx storybook@latest init`
 - [ ] Install a11y addon: `npm install -D @storybook/addon-a11y`
-- [ ] Copy config from `templates/storybook-setup/.storybook/` to your project's `.storybook/`
+- [ ] Copy config from `skills/review/storybook-setup/.storybook/` to your project's `.storybook/`
 - [ ] Import your project's `globals.css` in `.storybook/preview.ts`
 - [ ] Verify Storybook starts: `npx storybook dev --port 6006`
 
@@ -38,4 +38,4 @@ Once Storybook is set up, `/frontend-review` automatically:
 
 **Stories fail to render**: Components using server-only imports (`"use server"`) or Next.js-specific features need the `@storybook/nextjs` framework adapter.
 
-**Missing providers**: Components using Apollo, auth, or theme contexts need wrapper decorators. See `templates/storybook-setup/story-templates/complex.stories.tsx` for the pattern.
+**Missing providers**: Components using Apollo, auth, or theme contexts need wrapper decorators. See `skills/review/storybook-setup/story-templates/complex.stories.tsx` for the pattern.

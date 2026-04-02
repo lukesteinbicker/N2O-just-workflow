@@ -5,9 +5,9 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/lukes/n2o/internal/db"
-	"github.com/lukes/n2o/internal/task"
-	"github.com/lukes/n2o/internal/ui"
+	"n2o/cli/db"
+	"n2o/cli/task"
+	"n2o/cli/ui"
 	"github.com/spf13/cobra"
 )
 

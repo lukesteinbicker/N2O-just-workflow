@@ -3,12 +3,10 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/lukes/n2o/internal/auth"
-	"github.com/lukes/n2o/internal/ui"
+	"n2o/cli/auth"
+	"n2o/cli/ui"
 	"github.com/spf13/cobra"
 )
-
-var loginURL string
 
 var loginCmd = &cobra.Command{
 	Use:   "login",
@@ -17,8 +15,6 @@ var loginCmd = &cobra.Command{
 }
 
 func init() {
-	loginCmd.Flags().StringVar(&loginURL, "url", "", "N2O app URL (e.g. https://app.n2o.dev)")
-	_ = loginCmd.MarkFlagRequired("url")
 	rootCmd.AddCommand(loginCmd)
 }
 
@@ -28,7 +24,7 @@ func runLogin(cmd *cobra.Command, args []string) error {
 	fmt.Println("Starting device authorization flow...")
 	fmt.Println()
 
-	creds, err := auth.DeviceFlowLogin(loginURL)
+	creds, err := auth.DeviceFlowLogin(AppURL)
 	if err != nil {
 		return fmt.Errorf("login failed: %w", err)
 	}

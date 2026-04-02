@@ -1,6 +1,6 @@
 package main
 
-import "github.com/lukes/n2o/cmd/n2o/cmd"
+import "n2o/cli/cmd"
 
 func main() {
 	cmd.Execute()

@@ -8,8 +8,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/lukes/n2o/internal/auth"
-	"github.com/lukes/n2o/internal/config"
+	"n2o/cli/auth"
 )
 
 // ErrUnauthorized is returned when the server responds with 401.
@@ -33,7 +32,10 @@ func New(baseURL, token string) *Client {
 	}
 }
 
-// NewFromConfig loads credentials and project config, then returns a Client.
+// DefaultAppURL is set by the caller (typically cmd.AppURL) before NewFromConfig is used.
+var DefaultAppURL string
+
+// NewFromConfig loads credentials and returns a Client using DefaultAppURL.
 // Returns nil, nil if the user is not logged in.
 func NewFromConfig() (*Client, error) {
 	creds, err := auth.Load()
@@ -44,17 +46,7 @@ func NewFromConfig() (*Client, error) {
 		return nil, nil
 	}
 
-	appURL := creds.AppURL
-	if appURL == "" {
-		// Fall back to project config if credentials don't carry the URL.
-		cfg, err := config.LoadProject(".")
-		if err != nil {
-			return nil, fmt.Errorf("loading project config: %w", err)
-		}
-		appURL = cfg.ProjectName // best-effort fallback
-	}
-
-	return New(appURL, creds.Token), nil
+	return New(DefaultAppURL, creds.Token), nil
 }
 
 // Get performs an authenticated GET request.

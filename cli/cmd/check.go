@@ -5,9 +5,10 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 
-	"github.com/lukes/n2o/internal/config"
-	"github.com/lukes/n2o/internal/ui"
+	"n2o/cli/config"
+	"n2o/cli/ui"
 	"github.com/spf13/cobra"
 
 	_ "modernc.org/sqlite"
@@ -65,7 +66,7 @@ func runCheck(cmd *cobra.Command, args []string) error {
 	}
 
 	// Check: skills installed.
-	skillsDir := projectPath + "/.claude/skills"
+	skillsDir := filepath.Join(projectPath, AI.SkillsDir())
 	if entries, err := os.ReadDir(skillsDir); err != nil || len(entries) == 0 {
 		printCheck(false, "skills installed")
 		allPassed = false

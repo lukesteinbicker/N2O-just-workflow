@@ -524,7 +524,7 @@ sqlite3 .pm/tasks.db "INSERT INTO workflow_events (sprint, task_num, event_type,
 
 ### Two-Agent Pipeline
 
-Uses two sequential subagents. Detailed prompts are in `templates/adversarial-review.md`.
+Uses two sequential subagents. Detailed prompts are in `skills/plan/adversarial-review.md`.
 
 **Agent 1 — Question Generator**: Reads the spec, schema, and audit context. Generates 8-15 adversarial questions covering categories relevant to the spec (state transitions, race conditions, edge cases, failure modes, data integrity, etc.). Each question includes 2-4 options with a recommended choice and schema/spec impact notes.
 

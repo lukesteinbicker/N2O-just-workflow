@@ -4,10 +4,11 @@ import (
 	"fmt"
 	"os"
 	"time"
+	
 
-	"github.com/lukes/n2o/internal/auth"
-	"github.com/lukes/n2o/internal/db"
-	"github.com/lukes/n2o/internal/ui"
+	"n2o/cli/auth"
+	"n2o/cli/db"
+	"n2o/cli/ui"
 	"github.com/spf13/cobra"
 )
 

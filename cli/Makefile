@@ -1,25 +1,25 @@
-VERSION := $(shell jq -r '.version' n2o-manifest.json)
-LDFLAGS := -ldflags "-s -w -X github.com/lukes/n2o/cmd/n2o/cmd.Version=$(VERSION)"
+VERSION := 1.0.0
+LDFLAGS := -ldflags "-s -w -X n2o/cli/cmd.Version=$(VERSION)"
 
 .PHONY: build install clean test cross
 
 build:
-	go build $(LDFLAGS) -o n2o ./cmd/n2o/
+	go build $(LDFLAGS) -o n2o .
 
 install:
-	go install $(LDFLAGS) ./cmd/n2o/
+	go install $(LDFLAGS) .
 
 clean:
 	rm -f n2o
 	rm -rf dist/
 
-cross: dist/n2o-darwin-arm64 dist/n2o-darwin-amd64 dist/n2o-linux-amd64
+cross: dist/n2o-darwin-arm64 dist/n2o-darwin-amd64 dist/n2o-windows-amd64.exe
 
 dist/n2o-darwin-arm64:
-	GOOS=darwin GOARCH=arm64 go build $(LDFLAGS) -o $@ ./cmd/n2o/
+	GOOS=darwin GOARCH=arm64 go build $(LDFLAGS) -o $@ .
 
 dist/n2o-darwin-amd64:
-	GOOS=darwin GOARCH=amd64 go build $(LDFLAGS) -o $@ ./cmd/n2o/
+	GOOS=darwin GOARCH=amd64 go build $(LDFLAGS) -o $@ .
 
-dist/n2o-linux-amd64:
-	GOOS=linux GOARCH=amd64 go build $(LDFLAGS) -o $@ ./cmd/n2o/
+dist/n2o-windows-amd64.exe:
+	GOOS=windows GOARCH=amd64 go build $(LDFLAGS) -o $@ .
