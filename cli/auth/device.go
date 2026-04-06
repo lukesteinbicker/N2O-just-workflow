@@ -21,11 +21,12 @@ type deviceAuthResponse struct {
 
 // deviceVerifyResponse is the response from the device verification endpoint.
 type deviceVerifyResponse struct {
-	Error     string `json:"error,omitempty"`
-	Token     string `json:"token,omitempty"`
-	UserID    string `json:"user_id,omitempty"`
-	OrgID     string `json:"org_id,omitempty"`
-	ExpiresIn int    `json:"expires_in,omitempty"`
+	Error        string `json:"error,omitempty"`
+	Token        string `json:"token,omitempty"`
+	UserID       string `json:"user_id,omitempty"`
+	OrgID        string `json:"org_id,omitempty"`
+	ExpiresIn    int    `json:"expires_in,omitempty"`
+	LinearAPIKey string `json:"linear_api_key,omitempty"`
 }
 
 // DeviceFlowLogin performs the full OAuth device authorization flow (RFC 8628).
@@ -128,10 +129,11 @@ func pollVerify(appURL, deviceCode string) (*Credentials, bool, error) {
 			expiresAt = time.Now().Add(time.Duration(vr.ExpiresIn) * time.Second)
 		}
 		return &Credentials{
-			Token:     vr.Token,
-			UserID:    vr.UserID,
-			OrgID:     vr.OrgID,
-			ExpiresAt: expiresAt,
+			Token:        vr.Token,
+			UserID:       vr.UserID,
+			OrgID:        vr.OrgID,
+			ExpiresAt:    expiresAt,
+			LinearAPIKey: vr.LinearAPIKey,
 		}, true, nil
 	default:
 		return nil, false, fmt.Errorf("authorization error: %s", vr.Error)

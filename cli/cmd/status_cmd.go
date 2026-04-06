@@ -2,19 +2,17 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 	"time"
-	
 
 	"n2o/cli/auth"
-	"n2o/cli/db"
+	"n2o/cli/config"
 	"n2o/cli/ui"
 	"github.com/spf13/cobra"
 )
 
 var statusCmd = &cobra.Command{
 	Use:   "status",
-	Short: "Show CLI status: auth, events, and sync",
+	Short: "Show CLI status: N2O auth, Linear connectivity, active cycle",
 	RunE:  runStatus,
 }
 
@@ -26,75 +24,58 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	ui.PrintHeader("N2O Status")
 	fmt.Println()
 
-	// --- Auth ---
-	fmt.Println(ui.Bold("Auth"))
+	// --- N2O Auth ---
+	fmt.Println(ui.Bold("N2O"))
 	creds, err := auth.Load()
-	if err != nil {
+	switch {
+	case err != nil:
 		fmt.Printf("  Status: %s\n", ui.Error("error loading credentials"))
-	} else if creds == nil {
+	case creds == nil:
 		fmt.Printf("  Status: %s\n", ui.Warn("not logged in"))
-	} else if auth.IsExpired(creds) {
-		fmt.Printf("  Status: %s\n", ui.Error("expired"))
+	case auth.IsExpired(creds):
+		fmt.Printf("  Status: %s (expired %s)\n",
+			ui.Error("expired"),
+			creds.ExpiresAt.Format(time.RFC3339))
+	default:
+		fmt.Printf("  Status: %s\n", ui.Success("authenticated"))
 		fmt.Printf("  User:   %s\n", creds.UserID)
-		fmt.Printf("  Org:    %s\n", creds.OrgID)
-		fmt.Printf("  Expired: %s\n", creds.ExpiresAt.Format(time.RFC3339))
-	} else {
-		fmt.Printf("  Status: %s\n", ui.Success("logged in"))
-		fmt.Printf("  User:   %s\n", creds.UserID)
-		fmt.Printf("  Org:    %s\n", creds.OrgID)
-		if !creds.ExpiresAt.IsZero() {
-			fmt.Printf("  Expires: %s\n", creds.ExpiresAt.Format(time.RFC3339))
+		if creds.OrgID != "" {
+			fmt.Printf("  Org:    %s\n", creds.OrgID)
 		}
 	}
 	fmt.Println()
 
-	// --- Pending events ---
-	fmt.Println(ui.Bold("Events"))
-	projectPath, _ := os.Getwd()
-	dbFile := dbPath(projectPath)
-	if _, err := os.Stat(dbFile); err != nil {
-		fmt.Printf("  Pending: %s\n", ui.Info("no database found"))
-	} else {
-		database, err := db.Open(dbFile)
-		if err != nil {
-			fmt.Printf("  Pending: %s\n", ui.Error("error opening database"))
-		} else {
-			defer database.Close()
-			var count int
-			err = database.QueryRow("SELECT COUNT(*) FROM events WHERE synced = 0").Scan(&count)
-			if err != nil {
-				// Table might not exist.
-				fmt.Printf("  Pending: %s\n", ui.Info("no events table"))
-			} else {
-				label := ui.Success(fmt.Sprintf("%d", count))
-				if count > 0 {
-					label = ui.Warn(fmt.Sprintf("%d", count))
-				}
-				fmt.Printf("  Pending: %s unsynced event(s)\n", label)
-			}
-		}
+	// --- Linear ---
+	fmt.Println(ui.Bold("Linear"))
+	lc, err := requireLinear()
+	if err != nil {
+		fmt.Printf("  Status: %s\n", ui.Warn(err.Error()))
+		return nil
 	}
-	fmt.Println()
-
-	// --- Last sync ---
-	fmt.Println(ui.Bold("Sync"))
-	if _, err := os.Stat(dbFile); err != nil {
-		fmt.Printf("  Last sync: %s\n", ui.Info("n/a"))
-	} else {
-		database, err := db.Open(dbFile)
-		if err != nil {
-			fmt.Printf("  Last sync: %s\n", ui.Error("error"))
-		} else {
-			defer database.Close()
-			var lastSync *string
-			err = database.QueryRow("SELECT MAX(synced_at) FROM events WHERE synced = 1").Scan(&lastSync)
-			if err != nil || lastSync == nil {
-				fmt.Printf("  Last sync: %s\n", ui.Info("never"))
-			} else {
-				fmt.Printf("  Last sync: %s\n", *lastSync)
-			}
-		}
+	me, err := lc.GetMe()
+	if err != nil {
+		fmt.Printf("  Status: %s\n", ui.Error(err.Error()))
+		return nil
 	}
+	fmt.Printf("  Status: %s (as %s)\n", ui.Success("connected"), me.DisplayName)
 
+	// --- Project / active cycle ---
+	projCfg, _ := config.LoadProject(".")
+	if projCfg == nil || projCfg.Linear == nil || projCfg.Linear.TeamID == "" {
+		fmt.Printf("  Project: %s\n", ui.Info("no project config"))
+		return nil
+	}
+	if projCfg.Linear.TeamKey != "" {
+		fmt.Printf("  Team:   %s\n", projCfg.Linear.TeamKey)
+	}
+	cycle, err := lc.GetActiveCycle(projCfg.Linear.TeamID)
+	if err != nil {
+		fmt.Printf("  Active cycle: %s\n", ui.Info("none"))
+		return nil
+	}
+	fmt.Printf("  Active cycle: %s (%s → %s)\n",
+		cycle.Name,
+		cycle.StartsAt.Format("Jan 2"),
+		cycle.EndsAt.Format("Jan 2"))
 	return nil
 }

@@ -17,12 +17,23 @@ type CommandsConfig struct {
 	Build     string `json:"build,omitempty"`
 }
 
+type LinearConfig struct {
+	TeamID       string            `json:"team_id,omitempty"`
+	TeamKey      string            `json:"team_key,omitempty"` // e.g. "ENG"
+	TeamName     string            `json:"team_name,omitempty"`
+	ProjectID    string            `json:"project_id,omitempty"`
+	ProjectName  string            `json:"project_name,omitempty"`
+	ActiveCycle     string            `json:"active_cycle,omitempty"`
+	ActiveMilestone string            `json:"active_milestone,omitempty"` // Linear ProjectMilestone ID
+	StateMapping    map[string]string `json:"state_mapping,omitempty"`    // "In Progress" -> state UUID
+}
+
 type ProjectConfig struct {
 	N2OVersion       string         `json:"n2o_version,omitempty"`
 	ProjectName      string         `json:"project_name,omitempty"`
 	AITool           string         `json:"ai_tool,omitempty"`
+	Linear           *LinearConfig  `json:"linear,omitempty"`
 	Commands         CommandsConfig `json:"commands,omitempty"`
-	PMTool           string         `json:"pm_tool,omitempty"`
 	Team             []string       `json:"team,omitempty"`
 	ClaimTasks       bool           `json:"claim_tasks,omitempty"`
 	AutoInvokeSkills bool           `json:"auto_invoke_skills,omitempty"`

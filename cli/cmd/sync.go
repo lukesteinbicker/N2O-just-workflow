@@ -73,7 +73,12 @@ func runSync(cmd *cobra.Command, args []string) error {
 		if syncOnly == "skills" && !strings.HasPrefix(f.Path, AI.SkillsPathPrefix()) {
 			continue
 		}
-		if syncOnly == "schema" && f.Path != ".pm/schema.sql" {
+		// Schema/migration files are legacy artifacts — no more local DB.
+		if strings.HasPrefix(f.Path, ".pm/migrations/") || f.Path == ".pm/schema.sql" {
+			continue
+		}
+		if syncOnly == "schema" {
+			// No schema files to sync anymore; --only=schema is a no-op.
 			continue
 		}
 
@@ -84,6 +89,13 @@ func runSync(cmd *cobra.Command, args []string) error {
 		}
 		if updated {
 			synced++
+		}
+	}
+
+	// Refresh AI tool permission allowlist (no-op if entries already present).
+	if syncOnly == "" && !syncDryRun {
+		if err := AI.WritePermissions(projectPath); err != nil {
+			return fmt.Errorf("write permissions: %w", err)
 		}
 	}
 

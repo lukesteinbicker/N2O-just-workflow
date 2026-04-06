@@ -6,7 +6,9 @@ import (
 
 	"n2o/cli/adapter"
 	"n2o/cli/api"
+	"n2o/cli/auth"
 	"n2o/cli/config"
+	"n2o/cli/linear"
 	"github.com/spf13/cobra"
 )
 
@@ -73,7 +75,36 @@ func resolveProjectPath(cmd *cobra.Command, args []string) (string, error) {
 	return os.Getwd()
 }
 
-// dbPath returns the tasks.db path for a given project.
-func dbPath(projectPath string) string {
-	return projectPath + "/.pm/tasks.db"
+// requireLinear loads the Linear API key from credentials and returns a
+// configured Linear client. Returns an error with a clear recovery action if
+// the key is missing or the user is not authenticated.
+func requireLinear() (*linear.Client, error) {
+	creds, err := auth.Load()
+	if err != nil {
+		return nil, fmt.Errorf("loading credentials: %w", err)
+	}
+	if creds == nil {
+		return nil, fmt.Errorf("not authenticated — run `n2o login` then `n2o init`")
+	}
+	if creds.LinearAPIKey == "" {
+		return nil, fmt.Errorf("no Linear API key found — run `n2o init` to pull one from the N2O API")
+	}
+	return linear.New(creds.LinearAPIKey), nil
+}
+
+// loadProjectConfig loads the project config from the current working
+// directory and validates that Linear team/state mapping is present.
+func loadProjectConfig() (string, *config.ProjectConfig, error) {
+	projectPath, err := os.Getwd()
+	if err != nil {
+		return "", nil, err
+	}
+	cfg, err := config.LoadProject(projectPath)
+	if err != nil || cfg == nil {
+		return projectPath, nil, fmt.Errorf("project not initialized — run `n2o init`")
+	}
+	if cfg.Linear == nil || cfg.Linear.TeamID == "" {
+		return projectPath, cfg, fmt.Errorf("Linear team not configured — run `n2o init`")
+	}
+	return projectPath, cfg, nil
 }

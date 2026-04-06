@@ -9,11 +9,12 @@ import (
 
 // Credentials holds the authenticated user's token and metadata.
 type Credentials struct {
-	Token     string    `json:"token"`
-	UserID    string    `json:"user_id"`
-	OrgID     string    `json:"org_id"`
-	AppURL    string    `json:"app_url"`
-	ExpiresAt time.Time `json:"expires_at"`
+	Token        string    `json:"token"`
+	UserID       string    `json:"user_id"`
+	OrgID        string    `json:"org_id"`
+	AppURL       string    `json:"app_url"`
+	ExpiresAt    time.Time `json:"expires_at"`
+	LinearAPIKey string    `json:"linear_api_key,omitempty"`
 }
 
 // CredentialsPath returns the path to the credentials file (~/.n2o/credentials.json).

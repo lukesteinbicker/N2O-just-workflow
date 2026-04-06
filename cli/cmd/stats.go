@@ -3,116 +3,111 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
+	"sort"
 
-	"n2o/cli/db"
+	"n2o/cli/linear"
 	"n2o/cli/ui"
 	"github.com/spf13/cobra"
 )
 
 var (
-	statsJSON   bool
-	statsSprint string
+	statsJSON  bool
+	statsCycle string
 )
 
 var statsCmd = &cobra.Command{
 	Use:   "stats",
-	Short: "Show sprint and task statistics",
+	Short: "Show cycle statistics from Linear",
 	RunE:  runStats,
 }
 
 func init() {
 	statsCmd.Flags().BoolVar(&statsJSON, "json", false, "output as JSON")
-	statsCmd.Flags().StringVar(&statsSprint, "sprint", "", "filter by sprint")
+	statsCmd.Flags().StringVar(&statsCycle, "cycle", "", "cycle name (default: active cycle)")
 	rootCmd.AddCommand(statsCmd)
 }
 
-type sprintProgress struct {
-	Sprint          string  `json:"sprint"`
-	TotalTasks      int     `json:"total_tasks"`
-	Pending         int     `json:"pending"`
-	Red             int     `json:"red"`
-	Green           int     `json:"green"`
-	Blocked         int     `json:"blocked"`
-	Audited         int     `json:"audited"`
-	Verified        int     `json:"verified"`
-	PercentComplete float64 `json:"percent_complete"`
+type cycleStats struct {
+	Cycle       string         `json:"cycle"`
+	StartsAt    string         `json:"starts_at"`
+	EndsAt      string         `json:"ends_at"`
+	Total       int            `json:"total"`
+	ByState     map[string]int `json:"by_state"`
+	ParentRollup []parentStat   `json:"parents,omitempty"`
 }
 
-type availableTask struct {
-	Sprint  string `json:"sprint"`
-	TaskNum int    `json:"task_num"`
-	Title   string `json:"title"`
-	Type    string `json:"type"`
+type parentStat struct {
+	Identifier string `json:"identifier"`
+	Title      string `json:"title"`
+	Total      int    `json:"total"`
+	Done       int    `json:"done"`
 }
 
 func runStats(cmd *cobra.Command, args []string) error {
-	projectPath, err := resolveProjectPath(cmd, []string{})
+	lc, err := requireLinear()
+	if err != nil {
+		return err
+	}
+	_, cfg, err := loadProjectConfig()
 	if err != nil {
 		return err
 	}
 
-	database, err := db.Open(dbPath(projectPath))
+	cycleID, err := resolveCycleID(lc, cfg, statsCycle)
 	if err != nil {
-		return fmt.Errorf("open database: %w", err)
+		return err
 	}
-	defer database.Close()
-
-	// Query sprint progress.
-	query := "SELECT sprint, total_tasks, pending, red, green, blocked, audited, verified, percent_complete FROM sprint_progress"
-	queryArgs := []any{}
-	if statsSprint != "" {
-		query += " WHERE sprint = ?"
-		queryArgs = append(queryArgs, statsSprint)
-	}
-
-	rows, err := database.Query(query, queryArgs...)
+	cycles, err := lc.ListCycles(cfg.Linear.TeamID)
 	if err != nil {
-		return fmt.Errorf("query sprint_progress: %w", err)
+		return err
 	}
-	defer rows.Close()
-
-	var progress []sprintProgress
-	for rows.Next() {
-		var sp sprintProgress
-		if err := rows.Scan(&sp.Sprint, &sp.TotalTasks, &sp.Pending, &sp.Red,
-			&sp.Green, &sp.Blocked, &sp.Audited, &sp.Verified, &sp.PercentComplete); err != nil {
-			return err
+	var cycle *linear.Cycle
+	for i := range cycles {
+		if cycles[i].ID == cycleID {
+			cycle = &cycles[i]
+			break
 		}
-		progress = append(progress, sp)
 	}
 
-	// Query available tasks (next 10).
-	availQuery := "SELECT sprint, task_num, title, COALESCE(type, '') FROM available_tasks"
-	availArgs := []any{}
-	if statsSprint != "" {
-		availQuery += " WHERE sprint = ?"
-		availArgs = append(availArgs, statsSprint)
-	}
-	availQuery += " LIMIT 10"
-
-	availRows, err := database.Query(availQuery, availArgs...)
+	issues, err := lc.ListIssues(cfg.Linear.TeamID, linear.IssueListOpts{CycleID: cycleID})
 	if err != nil {
-		return fmt.Errorf("query available_tasks: %w", err)
+		return err
 	}
-	defer availRows.Close()
 
-	var available []availableTask
-	for availRows.Next() {
-		var at availableTask
-		if err := availRows.Scan(&at.Sprint, &at.TaskNum, &at.Title, &at.Type); err != nil {
-			return err
+	stats := cycleStats{
+		Total:   len(issues),
+		ByState: map[string]int{},
+	}
+	if cycle != nil {
+		stats.Cycle = cycle.Name
+		stats.StartsAt = cycle.StartsAt.Format("2006-01-02")
+		stats.EndsAt = cycle.EndsAt.Format("2006-01-02")
+	}
+
+	parents := map[string]*parentStat{}
+	for _, is := range issues {
+		stats.ByState[is.State.Name]++
+		if is.Parent != nil {
+			ps, ok := parents[is.Parent.Identifier]
+			if !ok {
+				ps = &parentStat{Identifier: is.Parent.Identifier, Title: is.Parent.Title}
+				parents[is.Parent.Identifier] = ps
+			}
+			ps.Total++
+			if is.State.Type == "completed" {
+				ps.Done++
+			}
 		}
-		available = append(available, at)
 	}
+	for _, ps := range parents {
+		stats.ParentRollup = append(stats.ParentRollup, *ps)
+	}
+	sort.Slice(stats.ParentRollup, func(i, j int) bool {
+		return stats.ParentRollup[i].Identifier < stats.ParentRollup[j].Identifier
+	})
 
-	// Output.
 	if statsJSON {
-		out := map[string]any{
-			"sprint_progress": progress,
-			"available_tasks": available,
-		}
-		data, err := json.MarshalIndent(out, "", "  ")
+		data, err := json.MarshalIndent(stats, "", "  ")
 		if err != nil {
 			return err
 		}
@@ -120,38 +115,31 @@ func runStats(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	// Print sprint progress table.
-	ui.PrintHeader("Sprint Progress")
+	ui.PrintHeader("Cycle stats")
 	fmt.Println()
-	if len(progress) == 0 {
-		ui.PrintInfo("No sprints found")
-	} else {
-		fmt.Printf("%-12s %5s %7s %5s %5s %7s %7s %8s %8s\n",
-			ui.Bold("Sprint"), ui.Bold("Total"), ui.Bold("Pending"), ui.Bold("Red"),
-			ui.Bold("Green"), ui.Bold("Blocked"), ui.Bold("Audited"), ui.Bold("Verified"), ui.Bold("Done %"))
-		fmt.Println(strings.Repeat("-", 80))
-		for _, sp := range progress {
-			fmt.Printf("%-12s %5d %7d %5d %5d %7d %7d %8d %7.1f%%\n",
-				sp.Sprint, sp.TotalTasks, sp.Pending, sp.Red, sp.Green,
-				sp.Blocked, sp.Audited, sp.Verified, sp.PercentComplete)
+	if stats.Cycle != "" {
+		fmt.Printf("%s  (%s → %s)\n", ui.Bold(stats.Cycle), stats.StartsAt, stats.EndsAt)
+	}
+	fmt.Printf("Total issues: %d\n\n", stats.Total)
+
+	if len(stats.ByState) > 0 {
+		fmt.Println(ui.Bold("By state"))
+		names := make([]string, 0, len(stats.ByState))
+		for name := range stats.ByState {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		for _, name := range names {
+			fmt.Printf("  %-14s %d\n", name, stats.ByState[name])
 		}
 	}
 
-	// Print available tasks.
-	fmt.Println()
-	ui.PrintHeader("Available Tasks (next 10)")
-	fmt.Println()
-	if len(available) == 0 {
-		ui.PrintInfo("No available tasks")
-	} else {
-		for _, at := range available {
-			taskType := at.Type
-			if taskType == "" {
-				taskType = "-"
-			}
-			fmt.Printf("  %s/%d  %-10s  %s\n", at.Sprint, at.TaskNum, taskType, at.Title)
+	if len(stats.ParentRollup) > 0 {
+		fmt.Println()
+		fmt.Println(ui.Bold("Parent rollup"))
+		for _, ps := range stats.ParentRollup {
+			fmt.Printf("  %s  %d/%d  %s\n", ps.Identifier, ps.Done, ps.Total, ps.Title)
 		}
 	}
-
 	return nil
 }
